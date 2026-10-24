@@ -3,7 +3,7 @@
 // 카카오 REST API 키와 본인 키는 절대 여기에 넣지 마세요 (Apps Script 내부에만 저장).
 window.APP_CONFIG = {
   KAKAO_JS_KEY: 0204eb0e4fa97b5cad755c274ce0b85e,
-  API_URL: https://script.google.com/macros/s/AKfycbxESXiKH9oI9JKhbeK0VdgNYRXalkC92SvhCjD1AcbhLsGtmFboxFsL2Tmx3QOC4X9v/exec,     // https://script.google.com/macros/s/..../exec
+  API_URL: https://script.google.com/macros/s/AKfycbyj5gzuQaqkwa32L0gELdmCPGCANeNuTzcGaK7Usd31wvo8lOvsDz5PxZnlfPZb5Tsblg/exec,     // https://script.google.com/macros/s/..../exec
   TITLE: '나의 맛집 지도',
   DEFAULT_CENTER: [37.5665, 126.9780]          // 저장된 위치가 없을 때 첫 화면 중심 (서울시청)
 };
