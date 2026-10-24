@@ -37,11 +37,31 @@
   }
 
   // ---------- 서버 요청 ----------
-  async function api(action, data) {
-    const r = await fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ k: S.key, action }, data || {})) });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || '서버 오류');
-    return j;
+  // 서버 통신: 스크립트 태그(GET) 방식 — 브라우저 교차 출처(CORS) 제한을 받지 않음
+  let apiSeq = 0;
+  function api(action, data) {
+    return new Promise((resolve, reject) => {
+      const cb = '__mz' + Date.now().toString(36) + (apiSeq++);
+      const p = JSON.stringify(Object.assign({ k: S.key, action }, data || {}));
+      const url = CFG.API_URL + '?cb=' + cb + '&p=' + encodeURIComponent(p);
+      if (url.length > 7800) return reject(new Error('입력 내용이 너무 깁니다. 메모·한줄평을 줄여 주세요.'));
+      const s = document.createElement('script');
+      let done = false;
+      const timer = setTimeout(() => finish(new Error('서버 응답이 없습니다. 잠시 후 다시 시도해 주세요.')), 60000);
+      function finish(err, j) {
+        if (done) return; done = true;
+        clearTimeout(timer);
+        try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+        s.remove();
+        if (err) reject(err);
+        else if (!j || !j.ok) reject(new Error((j && j.error) || '서버 오류'));
+        else resolve(j);
+      }
+      window[cb] = j => finish(null, j);
+      s.onerror = () => finish(new Error('서버에 연결하지 못했습니다 (Apps Script 배포 설정 확인)'));
+      s.src = url;
+      document.head.appendChild(s);
+    });
   }
 
   let toastT;
@@ -534,7 +554,7 @@
       $('adRes').innerHTML = '<div class="sub">찾는 중…</div>';
       try {
         let docs;
-        if (/https?:\/\//.test(t)) { const r = await api('resolveLink', { text: t }); docs = r.docs; if (!docs.length) throw new Error('링크에서 식당을 찾지 못했습니다. 식당 이름으로 검색해 보세요.'); }
+        if (/https?:\/\//.test(t)) { const r = await api('resolveLink', { text: t.slice(0, 500) }); docs = r.docs; if (!docs.length) throw new Error('링크에서 식당을 찾지 못했습니다. 식당 이름으로 검색해 보세요.'); }
         else { const c = map.getCenter(); const r = await api('kakaoSearch', { q: t, x: (S.pos ? S.pos[1] : c.getLng()), y: (S.pos ? S.pos[0] : c.getLat()) }); docs = r.docs; }
         renderAddResults(docs);
       } catch (e) { $('adRes').innerHTML = `<div class="sub">${esc(e.message)}</div>`; }
