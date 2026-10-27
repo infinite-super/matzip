@@ -97,6 +97,10 @@ body:not(.owner) .owner-only { display: none !important; }
 .res.place { display: flex; align-items: center; gap: 10px; }
 .res.place .grow { flex: 1; min-width: 0; }
 .res.place .btn { margin: 0; height: 38px; padding: 0 14px; flex: 0 0 auto; }
+#fpClose { display: block; width: 100%; height: 40px; margin-top: 10px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--sub); font-size: 14px; font-weight: 600; }
+.mine-box { background: #e7f5ff; border-radius: 12px; padding: 4px 12px 10px; margin-top: 10px; }
+.mine-box .sec-t { color: var(--primary); }
+.mine-box .res:last-of-type { border-bottom: 0; }
 .mode { flex: 0 0 auto; height: 42px; padding: 0 10px; border-radius: 10px; border: 0; color: #fff; font-size: 14px; font-weight: 700; white-space: nowrap; }
 .mode.place { background: #e03131; }
 .mode.food { background: var(--primary); }

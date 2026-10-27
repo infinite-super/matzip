@@ -261,6 +261,7 @@
     $('btnMode').onclick = () => { setMode(S.mode === 'place' ? 'food' : 'place'); $('q').focus(); };
     setMode(store.get('mz_mode', 'place'));
     document.addEventListener('click', e => { if (!$('filterPanel').hidden && !e.target.closest('#top')) closeFilter(); }, true);   // 필터창 밖을 누르면 닫힘
+    $('fpClose').onclick = closeFilter;
     $('btnFilter').onclick = () => { const fp = $('filterPanel'); fp.hidden = !fp.hidden; $('btnFilter').classList.toggle('on', !fp.hidden); };
     $('sido').onchange = () => { S.f.sido = $('sido').value; S.f.sgg = ''; fillSgg(); saveUI(); applyFilters(); fitFiltered(); };
     $('sgg').onchange = () => { S.f.sgg = $('sgg').value; saveUI(); applyFilters(); fitFiltered(); };
@@ -466,14 +467,23 @@
     const owner = S.role === 'owner';
     let friendRes = null;
     openSheet(`<div class="sh-name">📍 “${esc(q)}” 어디로 갈까요?</div>
-      <div class="sub">고르면 그곳 주변 지도로 이동합니다</div>
-      <div id="srPlaces" class="sub" style="margin-top:8px">카카오에서 장소 찾는 중…</div>
-      <div id="srMineWrap" hidden><div class="sec-t">🍽 같은 이름의 ${owner ? '내 맛집' : '공개 맛집'}도 있어요</div><div id="srMine"></div></div>`);
-    const showMine = n => {
-      const el = $('srMine'); if (!el || !n) return;
+      <div id="srMineWrap" class="mine-box" hidden><div class="sec-t">🍽 ${owner ? '내 맛집' : '공개 맛집'}에 있어요</div><div id="srMine"></div></div>
+      <div class="sec-t">📍 장소 — 고르면 그 주변 지도로 이동</div>
+      <div id="srPlaces" class="sub">카카오에서 장소 찾는 중…</div>`);
+    const showMine = list => {
+      const el = $('srMine'); if (!el || !list.length) return;
       $('srMineWrap').hidden = false;
-      el.innerHTML = `<button class="btn" id="srMineGo" style="width:100%">식당 목록 보기 (${n}곳)</button>`;
-      $('srMineGo').onclick = () => {
+      const top = list.slice(0, 3);
+      el.innerHTML = top.map((p, i) => `<div class="res place" data-m="${i}"><div class="grow"><div class="nm"><span class="dot" style="background:${colorOf(p)}"></span>${esc(p.n)}</div>
+          <div class="sub">${esc([p.sd, p.sg].filter(Boolean).join(' '))}${p.c ? ' · ' + esc(p.c) : ''}</div></div><button class="btn small primary">이동</button></div>`).join('')
+        + (list.length > 3 ? `<button class="btn small" id="srMineGo" style="width:100%;margin-top:6px">${owner ? '내 맛집' : '공개 맛집'} ${list.length}곳 목록 보기</button>` : '');
+      el.onclick = e => {
+        const row = e.target.closest('[data-m]'); if (!row) return;
+        const p = top[+row.dataset.m];
+        if (!owner) setFriendResults(friendRes.places, '');
+        hideSheetThen(() => goPlace(p));
+      };
+      if (list.length > 3) $('srMineGo').onclick = () => {
         S.f.q = q; S.f.quick = []; S.f.cats = []; S.f.prefs = [];
         if (owner) { buildChips(); applyFilters(); }
         else { S.friendMode.searching = true; buildChips(); setFriendResults(friendRes.places, friendRes.more ? '검색 결과가 많아 일부만 표시합니다.' : ''); }
@@ -482,9 +492,13 @@
     };
     if (owner) {
       const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
-      showMine(S.places.filter(p => toks.every(t => p._hay.indexOf(t) >= 0)).length);
+      const hits = S.places.filter(p => toks.every(t => p._hay.indexOf(t) >= 0));
+      const nm = q.replace(/\s+/g, '').toLowerCase();   // 이름이 일치하는 식당을 먼저
+      hits.sort((a, b) => (b.n.replace(/\s+/g, '').toLowerCase().indexOf(nm) >= 0) - (a.n.replace(/\s+/g, '').toLowerCase().indexOf(nm) >= 0)
+        || ((a._d == null ? 1e12 : a._d) - (b._d == null ? 1e12 : b._d)));   // 다음은 가까운 순
+      showMine(hits);
     } else {
-      api('search', Object.assign({ q }, friendParams())).then(res => { friendRes = res; showMine(res.places.length); })
+      api('search', Object.assign({ q }, friendParams())).then(res => { friendRes = res; showMine(res.places); })
         .catch(() => {});
     }
     try {
@@ -504,6 +518,17 @@
   const VISIT_LEVEL = 4;   // 장소 이동 시 지도 축척: 화면에 약 1km 범위, 식당 핀이 하나씩 보임
   function hideSheetThen(fn) { closeSheet(); setTimeout(fn, 50); }
 
+  // 내 맛집 하나로 바로 이동: 지도 확대 + 정보창
+  function goPlace(p) {
+    if (S.role === 'owner' && S.filtered.indexOf(p) < 0) {   // 칩·필터에 가려지지 않게 해제
+      Object.assign(S.f, { q: '', quick: [], cats: [], prefs: [], sido: '', sgg: '' }); $('q').value = '';
+      buildChips(); fillRegions(); applyFilters();
+    }
+    setView('map');
+    map.setLevel(3);
+    map.setCenter(new kakao.maps.LatLng(p.la, p.lo));
+    openPlace(p);
+  }
   function setVisit(v) {
     S.visit = v; closeFilter();
     S.f.q = ''; $('q').value = ''; S.friendMode.searching = false;
