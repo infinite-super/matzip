@@ -591,7 +591,9 @@
     if (history.state && history.state.mzSheet) history.back(); else hideSheet();
   }
 
-  function tmapUrl(p) { return `tmap://route?rGoName=${encodeURIComponent(p.n)}&rGoX=${p.lo}&rGoY=${p.la}`; }
+  // 티맵 길안내: 출발지는 티맵이 현재 위치로 자동 설정. 도착지 형식은 안드로이드(goal*)·아이폰(rGo*) 둘 다 넣음
+  function tmapUrl(p) { const n = encodeURIComponent(p.n);
+    return `tmap://route?goalname=${n}&goalx=${p.lo}&goaly=${p.la}&rGoName=${n}&rGoX=${p.lo}&rGoY=${p.la}`; }
   function kakaoUrl(p) { return p.k ? `https://place.map.kakao.com/${encodeURIComponent(p.k)}` : `https://map.kakao.com/link/search/${encodeURIComponent(p.n)}`; }
 
   function openPlace(p) {
