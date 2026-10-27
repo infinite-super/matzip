@@ -13,8 +13,8 @@ button, select, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 [hidden] { display: none !important; }
 
-#app { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; }
-main { min-height: 200px; }
+#app { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; overflow: hidden; }
+#top, #banner, #bottom { flex: 0 0 auto; }
 #top { padding: 8px 10px 6px; background: var(--bg); border-bottom: 1px solid var(--line); z-index: 20; padding-top: max(8px, env(safe-area-inset-top)); }
 .row { display: flex; gap: 6px; align-items: center; }
 #q { flex: 1; min-width: 0; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); font-size: 16px; }
@@ -25,13 +25,13 @@ main { min-height: 200px; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .chip { flex: 0 0 auto; height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid var(--line); background: var(--bg); font-size: 14px; white-space: nowrap; }
 .chip.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-#filterPanel { padding: 4px 0 6px; max-height: 50vh; overflow-y: auto; }
+#filterPanel { padding: 4px 0 6px; max-height: 40vh; overflow-y: auto; }
 .fp-title { font-size: 12px; color: var(--sub); margin: 8px 0 0; }
 select { height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; background: var(--soft); flex: 1; min-width: 0; }
 #btnReset { height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
 
 #banner { padding: 7px 12px; font-size: 13px; background: #fff4e6; color: #d9480f; text-align: center; }
-main { position: relative; flex: 1; min-height: 0; }
+main { position: relative; flex: 1 1 auto; min-height: 0; }
 #map { position: absolute; inset: 0; z-index: 0; }
 #mapCount { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(33,37,41,.82); color: #fff; font-size: 13px; padding: 5px 10px; border-radius: 14px; pointer-events: none; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #listView { position: absolute; inset: 0; z-index: 5; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
@@ -50,7 +50,7 @@ main { position: relative; flex: 1; min-height: 0; }
 .b-w { background: #fff5f5; color: #e03131; } .b-pub { background: #e7f5ff; color: var(--primary); }
 #more { display: block; width: calc(100% - 24px); margin: 12px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); }
 
-#bottom { display: flex; height: var(--nav-h); border-top: 1px solid var(--line); background: var(--bg); padding-bottom: env(safe-area-inset-bottom); box-sizing: content-box; z-index: 20; }
+#bottom { display: flex; height: var(--nav-h); min-height: var(--nav-h); border-top: 1px solid var(--line); background: var(--bg); padding-bottom: env(safe-area-inset-bottom); box-sizing: content-box; z-index: 20; }
 #bottom button { flex: 1; border: 0; background: none; font-size: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative; color: var(--sub); }
 #bottom button span { font-size: 11px; }
 #bottom button.on { color: var(--primary); }
@@ -92,3 +92,9 @@ main { position: relative; flex: 1; min-height: 0; }
 #gate { position: fixed; inset: 0; background: var(--bg); z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; line-height: 1.6; }
 #gate h2 { margin: 0 0 8px; }
 body:not(.owner) .owner-only { display: none !important; }
+
+.sec-t { font-size: 13px; font-weight: 700; color: var(--sub); margin: 14px 0 6px; }
+.res.place { display: flex; align-items: center; gap: 10px; }
+.res.place .grow { flex: 1; min-width: 0; }
+.res.place .btn { margin: 0; height: 38px; padding: 0 14px; flex: 0 0 auto; }
+.chip.visit { background: #e03131; border-color: #e03131; color: #fff; }

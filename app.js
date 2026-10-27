@@ -20,9 +20,10 @@
     key: '', role: '', name: '', categories: [], prefs: Object.keys(PREF),
     places: [], byId: {}, filtered: [], shown: PAGE, view: 'map', pos: null, menus: [],
     f: { q: '', cats: [], prefs: [], sido: '', sgg: '', quick: [], sort: 'auto', inView: false },
-    friendMode: { searching: false, more: false }
+    friendMode: { searching: false, more: false },
+    visit: null
   };
-  let map = null, clusterer = null, meMarker = null, markerImgs = {}, friendMarkers = [];
+  let map = null, clusterer = null, meMarker = null, markerImgs = {}, friendMarkers = [], visitMarker = null, visitCircle = null;
 
   // ---------- 키 확인 ----------
   const urlKey = new URLSearchParams(location.search).get('k');
@@ -150,6 +151,7 @@
     if (S.role === 'owner') { setOwnerData(data); applyFilters(); }
     else { toast(`${S.name}님, 환영합니다`); friendArea(); }
     setView(S.view);
+    locate(true, true);   // 시작하면 내 위치 주변으로
   }
 
   function setOwnerData(d) {
@@ -174,10 +176,12 @@
 
   // ---------- 필터 UI ----------
   // 상단 원탭 칩 (하나만 선택, 다시 누르면 해제) — 나머지 분류는 ⚙ 필터에서
-  const QUICK_OWNER = [{ id: 'work', label: '직장주변' }, { id: 'pri', label: '우선방문' }, { id: 'ver', label: '검증완료' }];
-  const QUICK_FRIEND = [{ id: 'ver', label: '✔ 검증된 곳' }];
+  const QUICK_OWNER = [{ id: 'all', label: '전체' }, { id: 'pri', label: '우선방문' }, { id: 'ver', label: '검증완료' }];
+  const QUICK_FRIEND = [{ id: 'all', label: '전체' }, { id: 'ver', label: '✔ 검증된 곳' }];
   const QUICK_CATS = ['한식', '중식', '일식', '분식'];
-  const QUICK_LABEL = { work: '직장주변', pri: '우선방문', ver: '검증완료' };
+  const QUICK_LABEL = { pri: '우선방문', ver: '검증완료' };
+  const EDIT_PREFS = () => S.prefs.filter(x => x !== '제주현지추천');   // 메뉴에서 제외 (기존 표시는 유지)
+  const origin = () => (S.visit ? [S.visit.la, S.visit.lo] : S.pos);
 
   function activeQuick() {
     if (S.f.quick.length === 1 && !S.f.cats.length && !S.f.prefs.length) return 'q:' + S.f.quick[0];
@@ -186,16 +190,19 @@
   }
   function filterLabel() {
     const parts = S.f.quick.map(x => QUICK_LABEL[x] || x).concat(S.f.cats, S.f.prefs, S.f.sgg || S.f.sido || [], S.f.q ? ['"' + S.f.q + '"'] : []);
-    return parts.length ? parts.join(' · ') : '전체';
+    const base = parts.length ? parts.join(' · ') : '전체';
+    return S.visit ? `📍${S.visit.name} ${S.visit.r}km · ${base}` : base;
   }
 
   function buildChips() {
     const quick = S.role === 'owner' ? QUICK_OWNER : QUICK_FRIEND;
     const act = activeQuick();
-    $('quick').innerHTML = quick.map(c => `<button class="chip${act === 'q:' + c.id ? ' on' : ''}" data-q="${c.id}">${c.label}</button>`).join('') +
+    const none = !S.f.quick.length && !S.f.cats.length && !S.f.prefs.length && !S.f.q && !S.f.sido && !S.f.sgg;
+    const vchip = S.visit ? `<button class="chip visit" data-q="visitClear">📍 ${esc(S.visit.name)} ${S.visit.r}km ✕</button>` : '';
+    $('quick').innerHTML = vchip + quick.map(c => `<button class="chip${(c.id === 'all' ? none : act === 'q:' + c.id) ? ' on' : ''}" data-q="${c.id}">${c.label}</button>`).join('') +
       QUICK_CATS.map(c => `<button class="chip${act === 'c:' + c ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
     $('catChips').innerHTML = S.categories.map(c => `<button class="chip${S.f.cats.indexOf(c) >= 0 ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
-    $('prefChips').innerHTML = S.prefs.map(p => `<button class="chip${S.f.prefs.indexOf(p) >= 0 ? ' on' : ''}" data-p="${esc(p)}">${esc(p)}</button>`).join('');
+    $('prefChips').innerHTML = EDIT_PREFS().map(p => `<button class="chip${S.f.prefs.indexOf(p) >= 0 ? ' on' : ''}" data-p="${esc(p)}">${esc(p)}</button>`).join('');
   }
 
   function toggleArr(arr, v) { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); }
@@ -230,24 +237,28 @@
       if (!b || !b.closest('#top')) return;
       if (b.closest('#quick')) {
         // 원탭 칩: 하나만 선택 (같은 칩 다시 누르면 전체 보기)
-        const key = b.dataset.q ? 'q:' + b.dataset.q : 'c:' + b.dataset.c;
-        const same = activeQuick() === key;
-        S.f.quick = []; S.f.cats = []; S.f.prefs = [];
-        if (!same) { if (b.dataset.q) S.f.quick = [b.dataset.q]; else S.f.cats = [b.dataset.c]; }
+        const qid = b.dataset.q;
+        if (qid === 'visitClear') { clearVisit(); return; }
+        if (qid === 'all') {   // 전체: 분류·검색어·지역 해제 (선택한 방문지는 유지)
+          S.f.quick = []; S.f.cats = []; S.f.prefs = []; S.f.sido = ''; S.f.sgg = ''; S.f.q = ''; $('q').value = '';
+          S.friendMode.searching = false;
+          if (S.role === 'owner') fillRegions();
+        } else {
+          const key = qid ? 'q:' + qid : 'c:' + b.dataset.c;
+          const same = activeQuick() === key;
+          S.f.quick = []; S.f.cats = []; S.f.prefs = [];
+          if (!same) { if (qid) S.f.quick = [qid]; else S.f.cats = [b.dataset.c]; }
+        }
       } else if (b.dataset.c) toggleArr(S.f.cats, b.dataset.c);
       else if (b.dataset.p) toggleArr(S.f.prefs, b.dataset.p);
       buildChips(); saveUI(); refresh();
       if (S.role === 'owner') showResultsOnMap();
     });
-    let qT;
-    $('q').addEventListener('input', () => {
-      S.f.q = $('q').value.trim();
-      if (S.role === 'owner') { clearTimeout(qT); qT = setTimeout(() => applyFilters(), 200); }
-      else if (!S.f.q) { S.friendMode.searching = false; friendArea(); }
+    $('q').addEventListener('input', () => {   // 입력 중에는 아무것도 바꾸지 않음. 지우면 검색 해제
+      if (!$('q').value.trim() && S.f.q) { S.f.q = ''; S.friendMode.searching = false; buildChips(); refresh(); }
     });
-    $('q').addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); $('q').blur(); S.f.q = $('q').value.trim(); if (S.role === 'friend') friendSearch(); else { applyFilters(); setView('list'); } }
-    });
+    $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); openSearch(); } });
+    $('btnSearch').onclick = openSearch;
     $('btnFilter').onclick = () => { const fp = $('filterPanel'); fp.hidden = !fp.hidden; $('btnFilter').classList.toggle('on', !fp.hidden); };
     $('sido').onchange = () => { S.f.sido = $('sido').value; S.f.sgg = ''; fillSgg(); saveUI(); applyFilters(); fitFiltered(); };
     $('sgg').onchange = () => { S.f.sgg = $('sgg').value; saveUI(); applyFilters(); fitFiltered(); };
@@ -287,9 +298,9 @@
   }
 
   // ---------- 위치 ----------
-  function locate(moveMap) {
-    if (!navigator.geolocation) return toast('이 기기에서는 위치 기능을 쓸 수 없습니다');
-    toast('현재 위치 확인 중…');
+  function locate(moveMap, initial) {
+    if (!navigator.geolocation) { if (!initial) toast('이 기기에서는 위치 기능을 쓸 수 없습니다'); return; }
+    if (!initial) toast('현재 위치 확인 중…');
     navigator.geolocation.getCurrentPosition(pos => {
       S.pos = [pos.coords.latitude, pos.coords.longitude];
       const ll = new kakao.maps.LatLng(S.pos[0], S.pos[1]);
@@ -299,9 +310,10 @@
           image: new kakao.maps.MarkerImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg), new kakao.maps.Size(22, 22), { offset: new kakao.maps.Point(11, 11) }) });
         meMarker.setMap(map);
       } else meMarker.setPosition(ll);
-      if (moveMap) { map.setLevel(5); map.setCenter(ll); }
+      if (moveMap && S.visit && !initial) clearVisit(true);   // 내 위치 버튼 = 방문지 해제
+      if (moveMap && !S.visit) { map.setLevel(5); map.setCenter(ll); }
       if (S.f.sort === 'auto' || S.f.sort === 'dist') refresh();
-    }, () => toast('위치 권한을 허용해 주세요'), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    }, () => toast(initial ? '위치 권한을 허용하면 내 주변부터 보여줍니다' : '위치 권한을 허용해 주세요', 3000), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   }
 
   function dist(a, b) {
@@ -320,7 +332,11 @@
     const q = f.quick;
     let b = null;
     if (f.inView && map) b = map.getBounds();
+    const org = origin();
+    const rad = S.visit ? S.visit.r * 1000 : 0;
     const arr = S.places.filter(p => {
+      p._d = org ? dist(org, [p.la, p.lo]) : null;
+      if (rad && p._d > rad) return false;
       if (f.cats.length && f.cats.indexOf(p.c) < 0) return false;
       if (f.prefs.length && f.prefs.indexOf(p.pf) < 0) return false;
       if (f.sido && p.sd !== f.sido) return false;
@@ -337,7 +353,6 @@
       if (b && !b.contain(new kakao.maps.LatLng(p.la, p.lo))) return false;
       return true;
     });
-    if (S.pos) arr.forEach(p => { p._d = dist(S.pos, [p.la, p.lo]); });
     const vmHit = p => (toks.length && toks.some(t => (p.v1 + ' ' + p.v2).toLowerCase().indexOf(t) >= 0) ? 1 : 0);
     const prefSort = (a, b2) => (PREF_ORDER[a.pf] - PREF_ORDER[b2.pf]) || ((b2.r || 0) - (a.r || 0)) || ((b2.ra || 0) - (a.ra || 0));
     const sorts = {
@@ -345,9 +360,9 @@
       mine: (a, b2) => ((b2.r || 0) - (a.r || 0)) || prefSort(a, b2),
       friends: (a, b2) => ((b2.ra || 0) - (a.ra || 0)) || ((b2.rn || 0) - (a.rn || 0)),
       recent: (a, b2) => String(b2.dt).localeCompare(String(a.dt)),
-      auto: (a, b2) => (vmHit(b2) - vmHit(a)) || (S.pos ? (a._d - b2._d) : prefSort(a, b2))
+      auto: (a, b2) => (vmHit(b2) - vmHit(a)) || (org ? (a._d - b2._d) : prefSort(a, b2))
     };
-    arr.sort(sorts[f.sort] && (f.sort !== 'dist' || S.pos) ? sorts[f.sort] : sorts.auto);
+    arr.sort(sorts[f.sort] && (f.sort !== 'dist' || org) ? sorts[f.sort] : sorts.auto);
     S.filtered = arr;
     S.shown = PAGE;
     $('count').textContent = `${arr.length.toLocaleString()}곳 / 전체 ${S.places.length.toLocaleString()}`;
@@ -410,14 +425,98 @@
     friendMarkers.forEach(m => m.setMap(null));
     S.places = list; S.byId = {};
     list.forEach(p => { S.byId[p.id] = p; });
-    if (S.pos) list.forEach(p => { p._d = dist(S.pos, [p.la, p.lo]); });
+    const org = origin();
+    if (org) list.forEach(p => { p._d = dist(org, [p.la, p.lo]); });
+    if (S.visit) list = list.filter(p => p._d <= S.visit.r * 1000);
     const srt = { dist: (a, b) => (a._d || 0) - (b._d || 0), friends: (a, b) => ((b.ra || 0) - (a.ra || 0)) || ((b.rn || 0) - (a.rn || 0)) };
-    if (srt[S.f.sort] && (S.f.sort !== 'dist' || S.pos)) list.sort(srt[S.f.sort]);
+    if (srt[S.f.sort] && (S.f.sort !== 'dist' || org)) list.sort(srt[S.f.sort]);
+    else if (S.visit) list.sort(srt.dist);
     S.filtered = list; S.shown = PAGE;
     $('count').textContent = `${list.length}곳`;
     setMapCount(list.length);
     banner(msg);
     renderMarkers(); renderList();
+  }
+
+  // ---------- 통합 검색: 장소(카카오) + 내 맛집 ----------
+  const RADII = [1, 3, 5, 10];
+  async function openSearch() {
+    const q = $('q').value.trim();
+    $('q').blur();
+    if (!q) return;
+    const owner = S.role === 'owner';
+    let r = S.visit ? S.visit.r : 3;
+    let friendRes = null;
+    const segBtn = n => `<button type="button" data-r="${n}" class="${n === r ? 'on' : ''}" style="${n === r ? 'background:#e03131' : ''}">${n}km</button>`;
+    openSheet(`<div class="sh-name">“${esc(q)}” 검색</div>
+      <div class="sec-t">📍 장소로 이동 — 그 주변 맛집 보기</div>
+      <div class="fld"><label>반경</label><div class="seg" id="srR">${RADII.map(segBtn).join('')}</div></div>
+      <div id="srPlaces" class="sub">카카오에서 장소 찾는 중…</div>
+      <div class="sec-t">🍽 ${owner ? '내 맛집' : '공개 맛집'}에서 이름·메뉴로 찾기</div>
+      <div id="srMine" class="sub">찾는 중…</div>`);
+    $('srR').onclick = e => {
+      const b = e.target.closest('[data-r]'); if (!b) return;
+      r = +b.dataset.r;
+      $('srR').querySelectorAll('[data-r]').forEach(x => { const on = +x.dataset.r === r; x.classList.toggle('on', on); x.style.background = on ? '#e03131' : ''; });
+    };
+    const showMine = n => {
+      const el = $('srMine'); if (!el) return;
+      el.innerHTML = n ? `<button class="btn" id="srMineGo" style="width:100%">목록 보기 (${n}곳)</button>` : '<div class="sub">일치하는 식당이 없습니다.</div>';
+      if (n) $('srMineGo').onclick = () => {
+        S.f.q = q; S.f.quick = []; S.f.cats = []; S.f.prefs = [];
+        if (owner) { buildChips(); applyFilters(); }
+        else { S.friendMode.searching = true; buildChips(); setFriendResults(friendRes.places, friendRes.more ? '검색 결과가 많아 일부만 표시합니다.' : ''); }
+        hideSheetThen(() => setView('list'));
+      };
+    };
+    if (owner) {
+      const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
+      showMine(S.places.filter(p => toks.every(t => p._hay.indexOf(t) >= 0)).length);
+    } else {
+      api('search', Object.assign({ q }, friendParams())).then(res => { friendRes = res; showMine(res.places.length); })
+        .catch(e => { const el = $('srMine'); if (el) el.textContent = e.message; });
+    }
+    try {
+      const res = await api('kakaoSearch', { q });
+      const el = $('srPlaces'); if (!el) return;
+      const docs = res.docs.slice(0, 8);
+      el.innerHTML = docs.length ? docs.map((d, i) => `<div class="res place" data-i="${i}"><div class="grow"><div class="nm">${esc(d.name)}</div>
+          <div class="sub">${esc(d.addr)}${d.cat ? ' · ' + esc(String(d.cat).split(' > ').pop()) : ''}</div></div><button class="btn small primary">이동</button></div>`).join('')
+        : '<div class="sub">카카오에서 찾은 장소가 없습니다. 지역명을 함께 입력해 보세요 (예: 경주 황리단길).</div>';
+      el.onclick = e => {
+        const row = e.target.closest('[data-i]'); if (!row) return;
+        const d = docs[+row.dataset.i];
+        hideSheetThen(() => setVisit({ name: d.name, la: d.y, lo: d.x, r }));
+      };
+    } catch (e) { const el = $('srPlaces'); if (el) el.textContent = e.message; }
+  }
+  function hideSheetThen(fn) { closeSheet(); setTimeout(fn, 50); }
+
+  function setVisit(v) {
+    S.visit = v;
+    S.f.q = ''; $('q').value = ''; S.friendMode.searching = false;
+    drawVisit(); buildChips();
+    if (S.role === 'owner') applyFilters();   // 친구 화면은 지도 이동 후 자동 재조회
+    toast(`${v.name} 주변 ${v.r}km`);
+  }
+  function clearVisit(silent) {
+    S.visit = null; drawVisit(); buildChips();
+    if (!silent) refresh();
+  }
+  function drawVisit() {
+    if (visitMarker) { visitMarker.setMap(null); visitMarker = null; }
+    if (visitCircle) { visitCircle.setMap(null); visitCircle = null; }
+    if (!S.visit || !map) return;
+    const v = S.visit, c = new kakao.maps.LatLng(v.la, v.lo);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="40"><path d="M15 1C7.3 1 1 7.1 1 14.7 1 25 15 39 15 39s14-14 14-24.3C29 7.1 22.7 1 15 1z" fill="#e03131" stroke="#fff" stroke-width="2"/><circle cx="15" cy="15" r="5" fill="#fff"/></svg>';
+    visitMarker = new kakao.maps.Marker({ position: c, zIndex: 20, title: v.name,
+      image: new kakao.maps.MarkerImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg), new kakao.maps.Size(30, 40), { offset: new kakao.maps.Point(15, 39) }) });
+    visitMarker.setMap(map);
+    visitCircle = new kakao.maps.Circle({ center: c, radius: v.r * 1000, strokeWeight: 2, strokeColor: '#e03131', strokeOpacity: 0.8,
+      strokeStyle: 'dashed', fillColor: '#e03131', fillOpacity: 0.05 });
+    visitCircle.setMap(map);
+    const dLa = v.r / 111, dLo = v.r / (111 * Math.cos(v.la * Math.PI / 180));
+    map.setBounds(new kakao.maps.LatLngBounds(new kakao.maps.LatLng(v.la - dLa, v.lo - dLo), new kakao.maps.LatLng(v.la + dLa, v.lo + dLo)));
   }
 
   // ---------- 목록 ----------
@@ -435,7 +534,7 @@
       const extra = [];
       if (S.role === 'owner' && p.r) extra.push('내 ★' + p.r);
       if (p.ra) extra.push(`지인 ★${p.ra} (${p.rn})`);
-      if (p._d != null && S.pos) extra.push(fmtDist(p._d));
+      if (p._d != null && origin()) extra.push(fmtDist(p._d));
       const note = S.role === 'owner' ? (p.memo || p.pc) : p.pc;
       return `<li data-i="${i}"><div class="nm"><span class="dot" style="background:${colorOf(p)}"></span>${esc(p.n)}${prefBadge(p)}</div>
         <div class="sub">${esc([p.sd, p.sg].filter(Boolean).join(' '))} · ${esc(p.c)}${p.m ? ' · ' + esc(p.m) : ''}${extra.length ? ' · ' + esc(extra.join(' · ')) : ''}</div>
@@ -468,7 +567,7 @@
       <div class="sub" style="margin-top:6px">${prefBadge(p)}</div>
       <div class="sub">${esc(p.c)}${p.m ? ' · ' + esc(p.m) : ''}${p.t ? ' · #' + esc(p.t.split(', ').join(' #')) : ''}</div>
       ${vm ? `<div class="vm" style="font-size:16px">✔ 검증 메뉴: ${esc(vm)}</div>` : ''}
-      <div class="sub">${S.role === 'owner' && p.r ? '내 평점 ★' + p.r + ' · ' : ''}${p.ra ? `지인 평균 ★${p.ra} (${p.rn}명)` : '지인 평가 없음'}${p._d != null && S.pos ? ' · ' + fmtDist(p._d) : ''}</div>
+      <div class="sub">${S.role === 'owner' && p.r ? '내 평점 ★' + p.r + ' · ' : ''}${p.ra ? `지인 평균 ★${p.ra} (${p.rn}명)` : '지인 평가 없음'}${p._d != null && origin() ? ' · ' + fmtDist(p._d) : ''}</div>
       ${p.pc ? `<div class="note">💬 ${esc(p.pc)}</div>` : ''}
       ${S.role === 'owner' && p.memo ? `<div class="note">📝 ${esc(p.memo)}</div>` : ''}
       <div class="sub">${esc(p.a)}</div>
@@ -504,7 +603,7 @@
   }
 
   function ownerEditForm(p) {
-    const segs = S.prefs.map(x => `<button type="button" data-pf="${esc(x)}" class="${x === p.pf ? 'on' : ''}" style="${x === p.pf ? 'background:' + PREF[x].color : ''}">${esc(x)}</button>`).join('');
+    const segs = EDIT_PREFS().map(x => `<button type="button" data-pf="${esc(x)}" class="${x === p.pf ? 'on' : ''}" style="${x === p.pf ? 'background:' + PREF[x].color : ''}">${esc(x)}</button>`).join('');
     return `<div class="sec"><h4>내 기록</h4>
       <div class="fld"><label>선호도</label><div class="seg" id="edPf">${segs}</div></div>
       <div class="fld"><label>내 평점 (같은 별을 다시 누르면 지움)</label>${starPicker('edR', p.r || 0)}</div>
@@ -620,7 +719,7 @@
 
   function pickDoc(d) {
     const owner = S.role === 'owner';
-    const segs = owner ? S.prefs.map(x => `<button type="button" data-pf="${esc(x)}" class="${x === '저장만' ? 'on' : ''}" style="${x === '저장만' ? 'background:' + PREF[x].color : ''}">${esc(x)}</button>`).join('') : '';
+    const segs = owner ? EDIT_PREFS().map(x => `<button type="button" data-pf="${esc(x)}" class="${x === '저장만' ? 'on' : ''}" style="${x === '저장만' ? 'background:' + PREF[x].color : ''}">${esc(x)}</button>`).join('') : '';
     openSheet(`<div class="sh-name">${esc(d.name)}</div><div class="sub">${esc(d.cat)}</div><div class="sub">${esc(d.addr)}</div>
       ${owner ? `<div class="fld"><label>선호도</label><div class="seg" id="npPf">${segs}</div></div>
         <div class="two"><div class="fld"><label>검증 메뉴 1</label><input type="text" id="npV1" list="menuList2"></div>
