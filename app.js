@@ -173,19 +173,27 @@
   function setInbox(n) { const b = $('inboxBadge'); b.hidden = !n; b.textContent = n; }
 
   // ---------- 필터 UI ----------
-  const QUICK_OWNER = [
-    { id: 'near', label: '📍 근처' }, { id: 'work', label: '직장주변' }, { id: 'pri', label: '우선방문' },
-    { id: 'ver', label: '검증완료' }, { id: 'unv', label: '안 가본 곳' }, { id: 'vm', label: '✔ 검증메뉴' },
-    { id: 'fr', label: '지인추천 4+' }, { id: 'bw', label: '흑백요리사' }, { id: 'jj', label: '제주현지추천' }
-  ];
-  const QUICK_FRIEND = [
-    { id: 'near', label: '📍 근처' }, { id: 'ver', label: '✔ 검증된 곳' }, { id: 'fr', label: '지인추천 4+' }, { id: 'bw', label: '흑백요리사' }
-  ];
+  // 상단 원탭 칩 (하나만 선택, 다시 누르면 해제) — 나머지 분류는 ⚙ 필터에서
+  const QUICK_OWNER = [{ id: 'work', label: '직장주변' }, { id: 'pri', label: '우선방문' }, { id: 'ver', label: '검증완료' }];
+  const QUICK_FRIEND = [{ id: 'ver', label: '✔ 검증된 곳' }];
+  const QUICK_CATS = ['한식', '중식', '일식', '분식'];
+  const QUICK_LABEL = { work: '직장주변', pri: '우선방문', ver: '검증완료' };
+
+  function activeQuick() {
+    if (S.f.quick.length === 1 && !S.f.cats.length && !S.f.prefs.length) return 'q:' + S.f.quick[0];
+    if (S.f.cats.length === 1 && !S.f.quick.length && !S.f.prefs.length) return 'c:' + S.f.cats[0];
+    return '';
+  }
+  function filterLabel() {
+    const parts = S.f.quick.map(x => QUICK_LABEL[x] || x).concat(S.f.cats, S.f.prefs, S.f.sgg || S.f.sido || [], S.f.q ? ['"' + S.f.q + '"'] : []);
+    return parts.length ? parts.join(' · ') : '전체';
+  }
 
   function buildChips() {
     const quick = S.role === 'owner' ? QUICK_OWNER : QUICK_FRIEND;
-    $('quick').innerHTML = quick.map(c => `<button class="chip${S.f.quick.indexOf(c.id) >= 0 ? ' on' : ''}" data-q="${c.id}">${c.label}</button>`).join('') +
-      S.categories.filter(c => c !== '미분류' || S.role === 'owner').map(c => `<button class="chip${S.f.cats.indexOf(c) >= 0 ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
+    const act = activeQuick();
+    $('quick').innerHTML = quick.map(c => `<button class="chip${act === 'q:' + c.id ? ' on' : ''}" data-q="${c.id}">${c.label}</button>`).join('') +
+      QUICK_CATS.map(c => `<button class="chip${act === 'c:' + c ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
     $('catChips').innerHTML = S.categories.map(c => `<button class="chip${S.f.cats.indexOf(c) >= 0 ? ' on' : ''}" data-c="${esc(c)}">${esc(c)}</button>`).join('');
     $('prefChips').innerHTML = S.prefs.map(p => `<button class="chip${S.f.prefs.indexOf(p) >= 0 ? ' on' : ''}" data-p="${esc(p)}">${esc(p)}</button>`).join('');
   }
@@ -205,7 +213,9 @@
   function restoreUI() {
     const f = store.get('mz_filters', null);
     if (f) Object.assign(S.f, f, { q: '' });
-    S.f.quick = (S.f.quick || []).filter(x => x !== 'near');
+    S.f.quick = (S.f.quick || []).filter(x => QUICK_LABEL[x]);
+    S.f.cats = S.f.cats || []; S.f.prefs = S.f.prefs || [];
+    if (S.f.quick.length + S.f.cats.length + S.f.prefs.length > 1) { S.f.quick = []; S.f.cats = []; S.f.prefs = []; }
     S.view = store.get('mz_view', 'map');
     $('sort').value = S.f.sort || 'auto';
     $('inView').checked = !!S.f.inView;
@@ -218,13 +228,16 @@
     document.addEventListener('click', e => {
       const b = e.target.closest('[data-q],[data-c],[data-p]');
       if (!b || !b.closest('#top')) return;
-      if (b.dataset.q) {
-        const id = b.dataset.q;
-        if (id === 'near') { locate(true); return; }
-        toggleArr(S.f.quick, id);
+      if (b.closest('#quick')) {
+        // 원탭 칩: 하나만 선택 (같은 칩 다시 누르면 전체 보기)
+        const key = b.dataset.q ? 'q:' + b.dataset.q : 'c:' + b.dataset.c;
+        const same = activeQuick() === key;
+        S.f.quick = []; S.f.cats = []; S.f.prefs = [];
+        if (!same) { if (b.dataset.q) S.f.quick = [b.dataset.q]; else S.f.cats = [b.dataset.c]; }
       } else if (b.dataset.c) toggleArr(S.f.cats, b.dataset.c);
       else if (b.dataset.p) toggleArr(S.f.prefs, b.dataset.p);
       buildChips(); saveUI(); refresh();
+      if (S.role === 'owner') showResultsOnMap();
     });
     let qT;
     $('q').addEventListener('input', () => {
@@ -247,6 +260,20 @@
     $('btnInbox').onclick = openInbox;
     $('more').onclick = () => { S.shown += PAGE; renderList(); };
     $('sheetBack').onclick = closeSheet;
+    $('sheetX').onclick = closeSheet;
+    window.addEventListener('popstate', () => { if (!$('sheet').hidden) hideSheet(); });
+  }
+
+  // 현재 지도 화면에 결과가 하나도 없으면 결과가 있는 곳으로 지도를 옮김
+  function showResultsOnMap() {
+    if (!map || !S.filtered.length || S.view !== 'map') return;
+    const b = map.getBounds();
+    const any = S.filtered.some(p => b.contain(new kakao.maps.LatLng(p.la, p.lo)));
+    if (!any) fitFiltered();
+  }
+  function setMapCount(n) {
+    const el = $('mapCount');
+    el.textContent = `${filterLabel()} · ${n.toLocaleString()}곳`;
   }
 
   function refresh() { if (S.role === 'owner') applyFilters(); else if (S.friendMode.searching) friendSearch(); else friendArea(); }
@@ -324,6 +351,7 @@
     S.filtered = arr;
     S.shown = PAGE;
     $('count').textContent = `${arr.length.toLocaleString()}곳 / 전체 ${S.places.length.toLocaleString()}`;
+    setMapCount(arr.length);
     if (!listOnly) renderMarkers();
     renderList();
   }
@@ -387,6 +415,7 @@
     if (srt[S.f.sort] && (S.f.sort !== 'dist' || S.pos)) list.sort(srt[S.f.sort]);
     S.filtered = list; S.shown = PAGE;
     $('count').textContent = `${list.length}곳`;
+    setMapCount(list.length);
     banner(msg);
     renderMarkers(); renderList();
   }
@@ -418,8 +447,16 @@
   }
 
   // ---------- 하단 정보창 ----------
-  function openSheet(html) { $('sheetBody').innerHTML = html; $('sheet').hidden = false; $('sheetBack').hidden = false; $('sheet').scrollTop = 0; }
-  function closeSheet() { $('sheet').hidden = true; $('sheetBack').hidden = true; }
+  // 정보창: ✕ 버튼·바깥 누르기·휴대폰 뒤로가기로 닫힘
+  function openSheet(html) {
+    const wasHidden = $('sheet').hidden;
+    $('sheetBody').innerHTML = html; $('sheet').hidden = false; $('sheetBack').hidden = false; $('sheet').scrollTop = 0;
+    if (wasHidden) { try { history.pushState({ mzSheet: 1 }, ''); } catch (e) { /* 무시 */ } }
+  }
+  function hideSheet() { $('sheet').hidden = true; $('sheetBack').hidden = true; }
+  function closeSheet() {
+    if (history.state && history.state.mzSheet) history.back(); else hideSheet();
+  }
 
   function tmapUrl(p) { return `tmap://route?rGoName=${encodeURIComponent(p.n)}&rGoX=${p.lo}&rGoY=${p.la}`; }
   function kakaoUrl(p) { return p.k ? `https://place.map.kakao.com/${encodeURIComponent(p.k)}` : `https://map.kakao.com/link/search/${encodeURIComponent(p.n)}`; }

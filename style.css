@@ -32,8 +32,9 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 8px; paddin
 
 #banner { padding: 7px 12px; font-size: 13px; background: #fff4e6; color: #d9480f; text-align: center; }
 main { position: relative; flex: 1; min-height: 0; }
-#map { position: absolute; inset: 0; }
-#listView { position: absolute; inset: 0; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
+#map { position: absolute; inset: 0; z-index: 0; }
+#mapCount { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(33,37,41,.82); color: #fff; font-size: 13px; padding: 5px 10px; border-radius: 14px; pointer-events: none; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#listView { position: absolute; inset: 0; z-index: 5; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
 #listBar { display: flex; justify-content: space-between; padding: 8px 12px; font-size: 13px; color: var(--sub); border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
 #list { list-style: none; margin: 0; padding: 0; }
 #list li { padding: 12px; border-bottom: 1px solid var(--line); }
@@ -58,6 +59,9 @@ main { position: relative; flex: 1; min-height: 0; }
 #sheetBack { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 40; }
 #sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 82vh; max-height: 82dvh; overflow-y: auto; background: var(--bg); border-radius: 18px 18px 0 0; z-index: 50; padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 20px rgba(0,0,0,.15); }
 .grip { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 4px auto 10px; }
+.sheet-head { position: sticky; top: -6px; z-index: 3; background: var(--bg); margin: -6px -16px 0; padding: 6px 16px 0; height: 44px; }
+#sheetX { position: absolute; top: 6px; right: 10px; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--soft); color: var(--fg); font-size: 18px; line-height: 40px; padding: 0; }
+.sheet-head .grip { margin-top: 6px; }
 .sh-name { font-size: 20px; font-weight: 800; }
 .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 6px; }
 .acts .btn:first-child { grid-column: 1 / -1; }
