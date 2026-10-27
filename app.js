@@ -591,9 +591,10 @@
     if (history.state && history.state.mzSheet) history.back(); else hideSheet();
   }
 
-  // 티맵 길안내: 출발지는 티맵이 현재 위치로 자동 설정. 도착지 형식은 안드로이드(goal*)·아이폰(rGo*) 둘 다 넣음
+  // 티맵 길안내: 출발지는 티맵이 현재 위치로 자동 설정. 안드로이드는 goal* 형식(시험 확인: 갤럭시 S25·티맵 11.8.4), 아이폰은 rGo* 형식
+  const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   function tmapUrl(p) { const n = encodeURIComponent(p.n);
-    return `tmap://route?goalname=${n}&goalx=${p.lo}&goaly=${p.la}&rGoName=${n}&rGoX=${p.lo}&rGoY=${p.la}`; }
+    return IS_IOS ? `tmap://route?rGoName=${n}&rGoX=${p.lo}&rGoY=${p.la}` : `tmap://route?goalname=${n}&goalx=${p.lo}&goaly=${p.la}`; }
   function kakaoUrl(p) { return p.k ? `https://place.map.kakao.com/${encodeURIComponent(p.k)}` : `https://map.kakao.com/link/search/${encodeURIComponent(p.n)}`; }
 
   function openPlace(p) {
