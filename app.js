@@ -271,6 +271,23 @@
     document.querySelectorAll('#bottom [data-view]').forEach(b => { b.onclick = () => setView(b.dataset.view); });
     $('btnLocate').onclick = () => locate(true);
     $('btnAdd').onclick = openAdd;
+    let adScrollT = 0;
+    $('addPanel').addEventListener('scroll', e => {
+      if (e.target.id !== 'adRes' || !isPhone() || !addDocs.length) return;
+      clearTimeout(adScrollT);
+      adScrollT = setTimeout(() => {
+        const box = $('adRes'), mid = box.scrollLeft + box.clientWidth / 2;
+        let best = 0, bd = 1e9;
+        box.querySelectorAll('.ad').forEach(x => { const c = x.offsetLeft + x.offsetWidth / 2; if (Math.abs(c - mid) < bd) { bd = Math.abs(c - mid); best = +x.dataset.row; } });
+        focusAdd(best, true, true);
+      }, 140);
+    }, true);
+    $('addPanel').addEventListener('click', e => {
+      if (e.target.closest('a')) return;
+      const o = e.target.closest('[data-open]'); if (o) return openPlace(S.byId[o.dataset.open]);
+      const b = e.target.closest('[data-pick]'); if (b) return pickDoc(addDocs[+b.dataset.pick]);
+      const r = e.target.closest('[data-row]'); if (r) focusAdd(+r.dataset.row);
+    });
     $('btnInbox').onclick = openInbox;
     $('more').onclick = () => { S.shown += PAGE; renderList(); };
     $('sheetBack').onclick = closeSheet;
@@ -293,6 +310,7 @@
   function refresh() { if (S.role === 'owner') applyFilters(); else if (S.friendMode.searching) friendSearch(); else friendArea(); }
 
   function setView(v) {
+    if (v === 'list' && $('addPanel') && !$('addPanel').hidden) closeAdd();
     S.view = v; saveUI();
     $('listView').hidden = v !== 'list';
     document.querySelectorAll('#bottom [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
@@ -714,24 +732,46 @@
   }
 
   // ---------- 추가(본인) / 건의(친구) ----------
+  // ---------- 맛집 추가·건의: 왼쪽 목록 + 지도 번호 핀 ----------
+  let addMarkers = [], addDocs = [], addCur = -1;
+  function numImg(n, on) {
+    const sz = on ? 36 : 28, col = on ? '#1c7ed6' : '#e03131';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}"><circle cx="${sz / 2}" cy="${sz / 2}" r="${sz / 2 - 2}" fill="${col}" stroke="#fff" stroke-width="2"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="${on ? 17 : 14}" font-weight="700" fill="#fff" font-family="sans-serif">${n}</text></svg>`;
+    return new kakao.maps.MarkerImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg), new kakao.maps.Size(sz, sz), { offset: new kakao.maps.Point(sz / 2, sz / 2) });
+  }
+  function clearAddMarkers() { addMarkers.forEach(m => m.setMap(null)); addMarkers = []; addDocs = []; addCur = -1; }
+  // 화면 크기별 배치: PC = 왼쪽 목록, 휴대폰 = 아래쪽 카드(옆으로 넘김)
+  const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
+  function panelPad() {
+    const el = $('addPanel'); if (!el || el.hidden) return { l: 0, b: 0 };
+    return isPhone() ? { l: 0, b: el.offsetHeight + 8 } : { l: el.offsetWidth, b: 0 };
+  }
+  function closeAdd() { $('addPanel').hidden = true; clearAddMarkers(); }
+
   function openAdd() {
+    if (!$('addPanel').hidden) return closeAdd();   // 추가 버튼을 다시 누르면 닫힘
     const owner = S.role === 'owner';
-    openSheet(`<div class="sh-name">${owner ? '맛집 추가' : '맛집 건의하기'}</div>
-      <div class="sub">카카오맵에서 <b>공유 → 링크 복사</b> 후 붙여넣거나, 식당 이름으로 검색하세요.</div>
-      <div class="fld"><textarea id="adIn" placeholder="링크 붙여넣기 또는 식당명 (예: 이도곰탕 강남)"></textarea></div>
-      <button class="btn primary" id="adFind" style="width:100%">찾기</button>
-      <div id="adRes"></div>
-      ${owner ? '' : '<div class="sec"><h4>내 건의 현황</h4><div id="mySg" class="sub">불러오는 중…</div></div>'}`);
-    $('adFind').onclick = async () => {
+    closeFilter(); setView('map');
+    $('addPanel').innerHTML = `<div class="ap-head"><b>${owner ? '맛집 추가' : '맛집 건의'}</b><button id="apX" type="button" aria-label="닫기">✕</button></div>
+      <div class="ap-in"><input id="adIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="식당 이름 또는 카카오맵 링크"><button id="adFind" class="icon" aria-label="찾기">🔍</button></div>
+      <div id="adRes"><div class="sub ap-hint">식당 이름(예: 이도곰탕 강남)이나 카카오맵 공유 링크로 찾으세요. 후보가 지도에 번호로 표시되고, 가 본 곳이 맞으면 <b>${owner ? '추가' : '건의'}</b>를 누르면 됩니다.</div></div>
+      ${owner ? '' : '<div class="ap-sec"><b>내 건의 현황</b><div id="mySg" class="sub">불러오는 중…</div></div>'}`;
+    $('addPanel').hidden = false;
+    $('apX').onclick = closeAdd;
+    const find = async () => {
       const t = $('adIn').value.trim(); if (!t) return;
-      $('adRes').innerHTML = '<div class="sub">찾는 중…</div>';
+      $('adIn').blur();
+      $('adRes').innerHTML = '<div class="sub ap-hint">찾는 중…</div>';
       try {
         let docs;
         if (/https?:\/\//.test(t)) { const r = await api('resolveLink', { text: t.slice(0, 500) }); docs = r.docs; if (!docs.length) throw new Error('링크에서 식당을 찾지 못했습니다. 식당 이름으로 검색해 보세요.'); }
         else { const c = map.getCenter(); const r = await api('kakaoSearch', { q: t, x: (S.pos ? S.pos[1] : c.getLng()), y: (S.pos ? S.pos[0] : c.getLat()) }); docs = r.docs; }
         renderAddResults(docs);
-      } catch (e) { $('adRes').innerHTML = `<div class="sub">${esc(e.message)}</div>`; }
+      } catch (e) { $('adRes').innerHTML = `<div class="sub ap-hint">${esc(e.message)}</div>`; }
     };
+    $('adFind').onclick = find;
+    $('adIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); find(); } });
+    setTimeout(() => $('adIn').focus(), 50);
     if (!owner) api('mySuggestions').then(r => {
       const el = $('mySg'); if (!el) return;
       el.innerHTML = r.list.length ? r.list.map(x => `<div class="rv">${esc(x.name)} <span class="badge">${esc(x.st)}</span> <span class="sub">${esc(x.dt)}</span></div>`).join('') : '아직 건의한 식당이 없습니다.';
@@ -740,18 +780,51 @@
 
   function renderAddResults(docs) {
     const owner = S.role === 'owner';
-    if (!docs.length) { $('adRes').innerHTML = '<div class="sub">검색 결과가 없습니다.</div>'; return; }
-    $('adRes').innerHTML = docs.slice(0, 10).map((d, i) => {
+    clearAddMarkers();
+    if (!docs.length) { $('adRes').innerHTML = '<div class="sub ap-hint">검색 결과가 없습니다. 지역명을 함께 입력해 보세요.</div>'; return; }
+    addDocs = docs.slice(0, 10);
+    $('adRes').innerHTML = addDocs.map((d, i) => {
       const exist = owner && S.places.find(p => p.k === d.id);
-      return `<div class="res"><div class="nm">${esc(d.name)}${exist ? '<span class="badge b-g">이미 등록됨</span>' : ''}</div>
-        <div class="sub">${esc(d.cat.replace(/^음식점 > /, ''))}</div><div class="sub">${esc(d.addr)}</div>
-        ${exist ? `<button class="btn small" data-open="${esc(exist.id)}" style="width:100%">열기</button>` : `<button class="btn small" data-pick="${i}" style="width:100%">${owner ? '이 식당 추가' : '이 식당 건의'}</button>`}</div>`;
+      const dd = S.pos ? fmtDist(dist(S.pos, [d.y, d.x])) : '';
+      const cat = String(d.cat || '').split(' > ').pop();
+      return `<div class="ad" data-row="${i}"><div class="ad-nm"><span class="num">${i + 1}</span><span>${esc(d.name)}</span></div>
+        <div class="ad-sub">${esc(cat)}${dd ? ' · ' + dd : ''}</div><div class="ad-sub">${esc(d.addr)}</div>
+        ${exist ? '<div class="ad-sub" style="color:var(--g);font-weight:700">✔ 이미 등록됨</div>' : ''}
+        <div class="ad-btns"><a href="https://place.map.kakao.com/${encodeURIComponent(d.id)}" target="_blank" rel="noopener">상세</a>
+        ${exist ? `<button type="button" data-open="${esc(exist.id)}">열기</button>` : `<button type="button" class="pri" data-pick="${i}">${owner ? '추가' : '건의'}</button>`}</div></div>`;
     }).join('');
-    $('adRes').onclick = e => {
-      const o = e.target.closest('[data-open]'); if (o) return openPlace(S.byId[o.dataset.open]);
-      const b = e.target.closest('[data-pick]'); if (!b) return;
-      pickDoc(docs[+b.dataset.pick]);
-    };
+    const bd = new kakao.maps.LatLngBounds();
+    addMarkers = addDocs.map((d, i) => {
+      const ll = new kakao.maps.LatLng(d.y, d.x); bd.extend(ll);
+      const m = new kakao.maps.Marker({ position: ll, image: numImg(i + 1, false), title: d.name, zIndex: 30 });
+      m.setMap(map);
+      kakao.maps.event.addListener(m, 'click', () => focusAdd(i, false));
+      return m;
+    });
+    const pd = panelPad();
+    $('adRes').scrollLeft = 0;
+    if (addDocs.length > 1) { map.setBounds(bd, 50, 30, pd.b + 30, pd.l + 30); focusAdd(0, false); }
+    else focusAdd(0, true);
+  }
+  // 목록에서 고르면 지도 확대 + 핀 강조 (지도는 목록 오른쪽 빈 곳 가운데로)
+  function focusAdd(i, move, fromScroll) {
+    if (fromScroll && i === addCur) return;
+    if (addCur >= 0 && addMarkers[addCur]) { addMarkers[addCur].setImage && addMarkers[addCur].setImage(numImg(addCur + 1, false)); addMarkers[addCur].setZIndex && addMarkers[addCur].setZIndex(30); }
+    addCur = i;
+    const m = addMarkers[i]; if (!m) return;
+    m.setImage && m.setImage(numImg(i + 1, true)); m.setZIndex && m.setZIndex(40);
+    if (move !== false) {
+      map.setLevel(3);
+      map.setCenter(new kakao.maps.LatLng(addDocs[i].y, addDocs[i].x));
+      const pd = panelPad();
+      if (map.panBy && (pd.l || pd.b)) map.panBy(-Math.round(pd.l / 2), Math.round(pd.b / 2));   // 목록·카드에 가리지 않게
+    }
+    document.querySelectorAll('#adRes .ad').forEach(x => x.classList.toggle('on', +x.dataset.row === i));
+    const row = document.querySelector(`#adRes .ad[data-row="${i}"]`);
+    if (row && !fromScroll) {
+      if (isPhone()) { const box = $('adRes'); box.scrollTo({ left: row.offsetLeft - (box.clientWidth - row.offsetWidth) / 2, behavior: 'smooth' }); }
+      else row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   function pickDoc(d) {
@@ -780,10 +853,10 @@
           if ((v1 || v2) && (pf === '저장만' || pf === '우선방문')) pf = '검증완료';
           const r = await api('addPlace', { doc: d, extra: { pf, v1, v2, memo: $('npMemo').value.trim(), pub: $('npPub').checked } });
           if (r.dup) { toast('이미 등록된 식당입니다'); return openPlace(S.byId[r.id]); }
-          addLocal(r.place); toast('추가했습니다'); openPlace(S.byId[r.place.id]);
+          addLocal(r.place); closeAdd(); toast('추가했습니다'); openPlace(S.byId[r.place.id]);
         } else {
           const r = await api('suggest', { doc: d, score: s, reason: $('sgR').value.trim() });
-          toast(r.msg, 3000); closeSheet();
+          toast(r.msg, 3000); closeAdd(); closeSheet();
         }
       } catch (e) { toast(e.message, 3500); $('npSave').disabled = false; }
     };
