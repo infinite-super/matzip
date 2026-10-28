@@ -106,6 +106,15 @@
     const saved = store.get('mz_map_' + S.role, null);
     const c = saved ? saved.c : (CFG.DEFAULT_CENTER || [37.5665, 126.978]);
     map = new kakao.maps.Map($('map'), { center: new kakao.maps.LatLng(c[0], c[1]), level: saved ? saved.l : 7 });
+    // 화면 크기가 바뀌면(홈 화면 앱 시작 직후, 회전, PC 창 크기) 지도를 다시 그림 — 안 하면 일부만 그려지고 나머지가 빈 칸으로 남음
+    const relayout = () => { if (!map) return; const ce = map.getCenter(); map.relayout(); map.setCenter(ce); };
+    let rT;
+    const onResize = () => { clearTimeout(rT); rT = setTimeout(relayout, 150); };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+    if (window.ResizeObserver) new ResizeObserver(onResize).observe($('map'));
+    [300, 1000].forEach(ms => setTimeout(relayout, ms));
     {
       clusterer = new kakao.maps.MarkerClusterer({ map, averageCenter: true, minLevel: 8, gridSize: 50, minClusterSize: 3,
         styles: [{ width: '26px', height: '26px', background: 'radial-gradient(circle at 35% 32%, #74c0fc, #1c7ed6 55%, #0b4f8a)', border: '1.5px solid #fff', boxShadow: '0 1px 3px rgba(0,0,0,.35)', borderRadius: '50%', color: '#fff', textAlign: 'center', lineHeight: '23px', fontWeight: '700', fontSize: '10px', boxSizing: 'border-box' }] });
