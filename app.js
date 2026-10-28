@@ -20,10 +20,9 @@
     key: '', role: '', name: '', categories: [], prefs: Object.keys(PREF),
     places: [], byId: {}, filtered: [], shown: PAGE, view: 'map', pos: null, menus: [],
     f: { q: '', vm: '', cats: [], prefs: [], sido: '', sgg: '', quick: [], sort: 'auto', inView: false },
-    friendMode: { searching: false },
     visit: null
   };
-  let map = null, clusterer = null, meMarker = null, markerImgs = {}, friendMarkers = [], visitMarker = null;
+  let map = null, clusterer = null, meMarker = null, markerImgs = {}, visitMarker = null;
 
   // ---------- 키 확인 ----------
   const urlKey = new URLSearchParams(location.search).get('k');
@@ -107,7 +106,7 @@
     const saved = store.get('mz_map_' + S.role, null);
     const c = saved ? saved.c : (CFG.DEFAULT_CENTER || [37.5665, 126.978]);
     map = new kakao.maps.Map($('map'), { center: new kakao.maps.LatLng(c[0], c[1]), level: saved ? saved.l : 7 });
-    if (S.role === 'owner') {
+    {
       clusterer = new kakao.maps.MarkerClusterer({ map, averageCenter: true, minLevel: 8, gridSize: 50, minClusterSize: 3,
         styles: [{ width: '26px', height: '26px', background: 'radial-gradient(circle at 35% 32%, #74c0fc, #1c7ed6 55%, #0b4f8a)', border: '1.5px solid #fff', boxShadow: '0 1px 3px rgba(0,0,0,.35)', borderRadius: '50%', color: '#fff', textAlign: 'center', lineHeight: '23px', fontWeight: '700', fontSize: '10px', boxSizing: 'border-box' }] });
     }
@@ -117,35 +116,38 @@
       store.set('mz_map_' + S.role, { c: [ce.getLat(), ce.getLng()], l: map.getLevel() });
       clearTimeout(idleT);
       idleT = setTimeout(() => {
-        if (S.role === 'friend') { if (!S.friendMode.searching) friendArea(); }
-        else if (S.f.inView && S.view === 'list') applyFilters(true);
+        if (S.f.inView && S.view === 'list') applyFilters(true);
       }, 350);
     });
   }
 
   // ---------- 시작 ----------
+  window.addEventListener('error', e => { if (!$('gate').hidden) return; banner('오류: ' + (e.message || '알 수 없음') + ' — 화면을 캡처해 알려 주세요'); });
+  window.addEventListener('unhandledrejection', e => { const m = e.reason && e.reason.message; if (m) banner('오류: ' + m); });
+  $('mapCount').textContent = '불러오는 중…';
   restoreUI();
   start();
 
   async function start() {
     try {
-      const cached = store.get('mz_owner_cache', null);
+      try { localStorage.removeItem('mz_owner_cache'); } catch (e) { /* 예전 저장 형식 정리 */ }
+      const cached = store.get('mz_cache', null);
       const kakaoP = loadKakao();
       let initP = api('init');
       let data;
-      if (cached && cached.key === S.key) {   // 본인: 이전 데이터로 먼저 표시 후 새로 고침
-        data = { role: 'owner', categories: cached.categories, prefs: cached.prefs, places: cached.places, pending: 0 };
+      if (cached && cached.key === S.key) {   // 이전 데이터로 먼저 표시 후 새로 고침
+        data = { role: cached.role, name: cached.name, categories: cached.categories, prefs: cached.prefs, places: cached.places, pending: 0 };
       } else {
         data = await initP; initP = null;
       }
       await kakaoP.catch(e => { throw new Error(e.message + '\n(카카오 JavaScript 키와 사이트 도메인 등록을 확인하세요)'); });
       boot(data);
       if (initP) {
-        initP.then(fresh => { if (fresh.role === 'owner') { setOwnerData(fresh); applyFilters(); } })
-          .catch(e => { if (/초대/.test(e.message)) { store.set('mz_owner_cache', null); gate('접속 권한 없음', e.message); } });
+        initP.then(fresh => { if (fresh.role === S.role) { setData(fresh); applyFilters(); } })
+          .catch(e => { if (/초대/.test(e.message)) { store.set('mz_cache', null); gate('접속 권한 없음', e.message); } });
       }
     } catch (e) {
-      if (/초대/.test(e.message)) { store.set('mz_owner_cache', null); gate('접속 권한 없음', e.message); }
+      if (/초대/.test(e.message)) { store.set('mz_cache', null); gate('접속 권한 없음', e.message); }
       else gate('불러오기 실패', e.message);
     }
   }
@@ -158,13 +160,13 @@
     initMap();
     buildChips();
     bindUI();
-    if (S.role === 'owner') { setOwnerData(data); applyFilters(); }
-    else { toast(`${S.name}님, 환영합니다`); friendArea(); }
+    setData(data); applyFilters();
+    if (S.role === 'friend') toast(`${S.name}님, 환영합니다`);
     setView(S.view);
     locate(true, true);   // 시작하면 내 위치 주변으로
   }
 
-  function setOwnerData(d) {
+  function setData(d) {
     S.places = d.places || [];
     S.byId = {};
     const menus = new Set();
@@ -176,16 +178,16 @@
     S.menus = Array.from(menus).sort();
     if (d.prefs) S.prefs = d.prefs;
     fillRegions();
-    setInbox(d.pending || 0);
+    if (S.role === 'owner') setInbox(d.pending || 0);
     if (clusterer) { clusterer.clear(); S.places.forEach(p => { p._mk = null; }); }
     saveCache();
   }
   // 검색용 문자열 (이름·지역·메뉴·메모 등)
   function indexPlace(p) { p._hay = [p.n, p.sd, p.sg, p.dg, p.a, p.c, p.m, p.v1, p.v2, p.t, p.memo, p.pc, p.kc, p.f, p.pf].join(' ').toLowerCase(); return p; }
-  // 본인 데이터를 휴대폰에 저장 (다음 실행 때 바로 표시)
+  // 받은 데이터를 휴대폰에 저장 (다음 실행 때 바로 표시)
   function saveCache() {
     const strip = p => { const q = Object.assign({}, p); delete q._mk; delete q._hay; delete q._d; return q; };
-    store.set('mz_owner_cache', { key: S.key, categories: S.categories, prefs: S.prefs, places: S.places.map(strip) });
+    store.set('mz_cache', { key: S.key, role: S.role, name: S.name, categories: S.categories, prefs: S.prefs, places: S.places.map(strip) });
   }
 
   function setInbox(n) { const b = $('inboxBadge'); b.hidden = !n; b.textContent = n; }
@@ -224,8 +226,7 @@
   function clearFilters(extra) {
     Object.assign(S.f, { q: '', vm: '', quick: [], cats: [], prefs: [], sido: '', sgg: '' }, extra || {});
     $('q').value = '';
-    S.friendMode.searching = false;
-    if (S.role === 'owner') fillRegions();
+    fillRegions();
   }
   function toggleArr(arr, v) { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); }
 
@@ -265,16 +266,16 @@
           const key = qid ? 'q:' + qid : 'c:' + b.dataset.c;
           const same = activeQuick() === key;
           S.f.quick = []; S.f.cats = []; S.f.prefs = [];
-          if (S.f.vm) { S.f.vm = ''; S.friendMode.searching = false; }
+          S.f.vm = '';
           if (!same) { if (qid) S.f.quick = [qid]; else S.f.cats = [b.dataset.c]; }
         }
       } else if (b.dataset.c) toggleArr(S.f.cats, b.dataset.c);
       else if (b.dataset.p) toggleArr(S.f.prefs, b.dataset.p);
       buildChips(); saveUI(); refresh();
-      if (S.role === 'owner') showResultsOnMap();
+      showResultsOnMap();
     });
     $('q').addEventListener('input', () => {   // 입력 중에는 아무것도 바꾸지 않음. 지우면 검색 해제
-      if (!$('q').value.trim() && S.f.q) { S.f.q = ''; S.friendMode.searching = false; buildChips(); refresh(); }
+      if (!$('q').value.trim() && S.f.q) { S.f.q = ''; buildChips(); refresh(); }
     });
     $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); openSearch(); } });
     $('btnSearch').onclick = openSearch;
@@ -329,7 +330,7 @@
     el.textContent = `${filterLabel()} · ${n.toLocaleString()}곳`;
   }
 
-  function refresh() { if (S.role === 'owner') applyFilters(); else if (S.friendMode.searching) friendSearch(); else friendArea(); }
+  function refresh() { applyFilters(); }
 
   function setView(v) {
     if (v === 'list' && $('addPanel') && !$('addPanel').hidden) closeAdd();
@@ -337,7 +338,7 @@
     $('listView').hidden = v !== 'list';
     document.querySelectorAll('#bottom [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
     if (v === 'map' && map) setTimeout(() => map.relayout(), 0);
-    if (v === 'list') { if (S.role === 'owner' && S.f.inView) applyFilters(true); else renderList(); }
+    if (v === 'list') { if (S.f.inView) applyFilters(true); else renderList(); }
   }
 
   // ---------- 위치 ----------
@@ -366,9 +367,10 @@
   }
   const fmtDist = m => (m < 1000 ? Math.round(m) + 'm' : (m / 1000).toFixed(1) + 'km');
 
-  // ---------- 본인: 필터 ----------
+  // ---------- 필터 (본인·친구 공통, 휴대폰에서 바로 거름) ----------
+  const isVer = p => (S.role === 'owner' ? p.pf === '검증완료' : p.ver);
   function applyFilters(listOnly) {
-    if (S.role !== 'owner') return;
+    if (!map) return;
     const f = S.f;
     const toks = f.q.toLowerCase().split(/\s+/).filter(Boolean);
     const q = f.quick;
@@ -382,14 +384,14 @@
       if (f.sido && p.sd !== f.sido) return false;
       if (f.sgg && p.sg !== f.sgg) return false;
       if (q.indexOf('pri') >= 0 && p.pf !== '우선방문') return false;
-      if (q.indexOf('ver') >= 0 && p.pf !== '검증완료') return false;
+      if (q.indexOf('ver') >= 0 && !isVer(p)) return false;
       if (toks.length && !toks.every(t => p._hay.indexOf(t) >= 0)) return false;
       if (f.vm && p.v1 !== f.vm && p.v2 !== f.vm) return false;
       if (b && !b.contain(new kakao.maps.LatLng(p.la, p.lo))) return false;
       return true;
     });
     const vmHit = p => (toks.length && toks.some(t => (p.v1 + ' ' + p.v2).toLowerCase().indexOf(t) >= 0) ? 1 : 0);
-    const prefSort = (a, b2) => (PREF_ORDER[a.pf] - PREF_ORDER[b2.pf]) || ((b2.r || 0) - (a.r || 0)) || ((b2.ra || 0) - (a.ra || 0));
+    const prefSort = (a, b2) => (S.role === 'owner' ? PREF_ORDER[a.pf] - PREF_ORDER[b2.pf] : isVer(b2) - isVer(a)) || ((b2.r || 0) - (a.r || 0)) || ((b2.ra || 0) - (a.ra || 0));
     const sorts = {
       dist: (a, b2) => (a._d || 0) - (b2._d || 0),
       mine: (a, b2) => ((b2.r || 0) - (a.r || 0)) || prefSort(a, b2),
@@ -415,13 +417,8 @@
   }
 
   function renderMarkers() {
-    if (S.role === 'owner') {
-      clusterer.clear();
-      clusterer.addMarkers(S.filtered.map(markerFor));
-    } else {
-      friendMarkers.forEach(m => m.setMap(null));
-      friendMarkers = S.filtered.map(p => { const m = markerFor(p); m.setMap(map); return m; });
-    }
+    clusterer.clear();
+    clusterer.addMarkers(S.filtered.map(markerFor));
   }
 
   function fitFiltered() {
@@ -431,47 +428,8 @@
     map.setBounds(bd);
   }
 
-  // ---------- 친구: 서버 조회 ----------
-  function friendParams() { return { cats: S.f.cats, onlyVerified: S.f.quick.indexOf('ver') >= 0 }; }
-  let areaSeq = 0;
-  async function friendArea() {
-    if (!map) return;
-    const b = map.getBounds(), sw = b.getSouthWest(), ne = b.getNorthEast();
-    const seq = ++areaSeq;
-    try {
-      const r = await api('area', Object.assign({ sw: [sw.getLat(), sw.getLng()], ne: [ne.getLat(), ne.getLng()] }, friendParams()));
-      if (seq !== areaSeq) return;
-      setFriendResults(r.places, r.more ? '이 범위에 식당이 많습니다. 지도를 확대하면 더 보입니다.' : '');
-    } catch (e) { toast(e.message, 3500); }
-  }
-  async function friendSearch() {
-    if (S.f.vm) return friendMenuSearch();
-    if (!S.f.q) { S.friendMode.searching = false; return friendArea(); }
-    S.friendMode.searching = true;
-    try {
-      const r = await api('search', Object.assign({ q: S.f.q }, friendParams()));
-      setFriendResults(r.places, r.places.length ? (r.more ? '검색 결과가 많아 일부만 표시합니다. 검색어를 더 구체적으로 입력해 보세요.' : '') : '검색 결과가 없습니다.');
-      if (r.places.length) { fitFiltered(); setView('list'); }
-    } catch (e) { toast(e.message, 3500); }
-  }
-  function setFriendResults(list, msg) {
-    friendMarkers.forEach(m => m.setMap(null));
-    S.places = list; S.byId = {};
-    list.forEach(p => { S.byId[p.id] = p; });
-    const org = origin();
-    if (org) list.forEach(p => { p._d = dist(org, [p.la, p.lo]); });
-    const srt = { dist: (a, b) => (a._d || 0) - (b._d || 0), friends: (a, b) => ((b.ra || 0) - (a.ra || 0)) || ((b.rn || 0) - (a.rn || 0)) };
-    if (srt[S.f.sort] && (S.f.sort !== 'dist' || org)) list.sort(srt[S.f.sort]);
-    else if (S.visit) list.sort(srt.dist);
-    S.filtered = list; S.shown = PAGE;
-    $('count').textContent = `${list.length}곳`;
-    setMapCount(list.length);
-    banner(msg);
-    renderMarkers(); renderList();
-  }
-
   // ---------- 🍴 검증 메뉴 검색 ----------
-  async function openMenus() {
+  function openMenus() {
     closeFilter();
     if (!$('addPanel').hidden) closeAdd();
     openSheet(`<div class="sh-name">🍴 검증 메뉴로 찾기</div>
@@ -488,34 +446,16 @@
     };
     $('mnIn').addEventListener('input', draw);
     $('mnChips').onclick = e => { const b = e.target.closest('[data-m]'); if (b) setMenu(b.dataset.m); };
-    try {
-      if (S.role === 'owner') {
-        const c = {};
-        S.places.forEach(p => [p.v1, p.v2].forEach(m => { m = String(m || '').trim(); if (m) c[m] = (c[m] || 0) + 1; }));
-        list = Object.keys(c).map(m => ({ m, n: c[m] }));
-      } else list = (await api('menus')).menus;
-      list.sort((a, b) => (b.n - a.n) || a.m.localeCompare(b.m, 'ko'));
-    } catch (e) { const el = $('mnChips'); if (el) el.textContent = e.message; return; }
+    const c = {};
+    S.places.forEach(p => [p.v1, p.v2].forEach(m => { m = String(m || '').trim(); if (m) c[m] = (c[m] || 0) + 1; }));
+    list = Object.keys(c).map(m => ({ m, n: c[m] })).sort((a, b) => (b.n - a.n) || a.m.localeCompare(b.m, 'ko'));
     draw();
   }
   function setMenu(m) {
     clearFilters({ vm: m });
     buildChips();
-    hideSheetThen(() => {
-      if (S.role === 'owner') { applyFilters(); setView('list'); }
-      else friendMenuSearch();
-    });
+    hideSheetThen(() => { applyFilters(); setView('list'); });
   }
-  async function friendMenuSearch() {
-    S.friendMode.searching = true;
-    const o = origin() || (map ? [map.getCenter().getLat(), map.getCenter().getLng()] : null);
-    try {
-      const r = await api('menuSearch', Object.assign({ m: S.f.vm, pos: o }, friendParams()));
-      setFriendResults(r.places, r.places.length ? (r.more ? '가까운 곳부터 일부만 표시합니다.' : '') : '해당 메뉴로 검증된 식당이 없습니다.');
-      setView('list');
-    } catch (e) { toast(e.message, 3500); }
-  }
-
   // ---------- 검색 종류: 📍 장소(지도 이동) / 🍽 식당(이름·메뉴로 찾기) ----------
   function setMode(m) {
     S.mode = m === 'food' ? 'food' : 'place';
@@ -526,14 +466,11 @@
     $('q').placeholder = place ? '가려는 곳 (예: 대전역)' : '식당 이름·메뉴 (예: 냉면)';
   }
   function closeFilter() { $('filterPanel').hidden = true; $('btnFilter').classList.remove('on'); }
-  async function foodSearch(q) {
+  function foodSearch(q) {
     clearFilters({ q }); $('q').value = q;
-    buildChips();
-    if (S.role === 'owner') {
-      applyFilters();
-      if (!S.filtered.length) { toast('일치하는 식당이 없습니다'); return; }
-      setView('list');
-    } else await friendSearch();
+    buildChips(); applyFilters();
+    if (!S.filtered.length) { toast('일치하는 식당이 없습니다'); return; }
+    setView('list');
   }
 
   // ---------- 장소 검색(카카오) ----------
@@ -543,7 +480,6 @@
     if (!q) return;
     if (S.mode === 'food') return foodSearch(q);
     const owner = S.role === 'owner';
-    let friendRes = null;
     openSheet(`<div class="sh-name">📍 “${esc(q)}” 어디로 갈까요?</div>
       <div id="srMineWrap" class="mine-box" hidden><div class="sec-t">🍽 ${owner ? '내 맛집' : '공개 맛집'}에 있어요</div><div id="srMine"></div></div>
       <div class="sec-t">📍 장소 — 고르면 그 주변 지도로 이동</div>
@@ -558,26 +494,21 @@
       el.onclick = e => {
         const row = e.target.closest('[data-m]'); if (!row) return;
         const p = top[+row.dataset.m];
-        if (!owner) setFriendResults(friendRes.places, '');
         hideSheetThen(() => goPlace(p));
       };
       if (list.length > 3) $('srMineGo').onclick = () => {
         clearFilters({ q }); $('q').value = q;
-        if (owner) { buildChips(); applyFilters(); }
-        else { S.friendMode.searching = true; buildChips(); setFriendResults(friendRes.places, friendRes.more ? '검색 결과가 많아 일부만 표시합니다.' : ''); }
+        buildChips(); applyFilters();
         hideSheetThen(() => setView('list'));
       };
     };
-    if (owner) {
+    {
       const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
       const hits = S.places.filter(p => toks.every(t => p._hay.indexOf(t) >= 0));
       const nm = q.replace(/\s+/g, '').toLowerCase();   // 이름이 일치하는 식당을 먼저
       hits.sort((a, b) => (b.n.replace(/\s+/g, '').toLowerCase().indexOf(nm) >= 0) - (a.n.replace(/\s+/g, '').toLowerCase().indexOf(nm) >= 0)
         || ((a._d == null ? 1e12 : a._d) - (b._d == null ? 1e12 : b._d)));   // 다음은 가까운 순
       showMine(hits);
-    } else {
-      api('search', Object.assign({ q }, friendParams())).then(res => { friendRes = res; showMine(res.places); })
-        .catch(() => {});
     }
     try {
       const res = await api('kakaoSearch', { q });
@@ -598,7 +529,7 @@
 
   // 내 맛집 하나로 바로 이동: 지도 확대 + 정보창
   function goPlace(p) {
-    if (S.role === 'owner' && S.filtered.indexOf(p) < 0) {   // 칩·필터에 가려지지 않게 해제
+    if (S.filtered.indexOf(p) < 0) {   // 칩·필터에 가려지지 않게 해제
       clearFilters(); buildChips(); applyFilters();
     }
     setView('map');
@@ -608,9 +539,9 @@
   }
   function setVisit(v) {
     S.visit = v; closeFilter();
-    S.f.q = ''; $('q').value = ''; S.friendMode.searching = false;
+    S.f.q = ''; $('q').value = '';
     drawVisit(); buildChips();
-    if (S.role === 'owner') applyFilters();   // 친구 화면은 지도 이동 후 자동 재조회
+    applyFilters();
     toast(`${v.name} 주변 · 가까운 순`);
   }
   function clearVisit(silent) {
@@ -788,7 +719,7 @@
       $('frSave').disabled = true;
       try {
         const r = await api('rate', { id: p.id, score: s, comment: $('frC').value.trim(), menu: $('frM').value.trim() });
-        Object.assign(p, r); toast('평가를 등록했습니다'); openPlace(p); renderList();
+        Object.assign(p, r); saveCache(); toast('평가를 등록했습니다'); openPlace(p); renderList();
       } catch (e) { toast(e.message, 3500); $('frSave').disabled = false; }
     };
   }
