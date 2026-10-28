@@ -4,6 +4,6 @@
 window.APP_CONFIG = {
   KAKAO_JS_KEY: '1cddb56e300e637177c4aa0748fd1b7e',
   API_URL: 'https://script.google.com/macros/s/AKfycbzKJ5H58G7dM5AJIyrRNlqr175ydX6FUxaxS1f6CAZntIPAYoC5NBUagi4ioTOFKqD-kw/exec',
-  TITLE: '나의 맛집 지도',
+  TITLE: '호야맛집',
   DEFAULT_CENTER: [37.5665, 126.9780]          // 저장된 위치가 없을 때 첫 화면 중심 (서울시청)
 };
