@@ -1,7 +1,7 @@
 :root {
   --bg: #ffffff; --fg: #212529; --sub: #868e96; --line: #e9ecef; --soft: #f8f9fa;
   --primary: #1c7ed6; --g: #2f9e44; --p: #7048e8; --o: #f76707; --j: #1098ad;
-  --radius: 12px; --top-h: 104px; --nav-h: 60px;
+  --nav-h: 60px;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #1a1b1e; --fg: #e9ecef; --sub: #909296; --line: #2c2e33; --soft: #25262b; }
@@ -80,7 +80,7 @@ main { position: relative; flex: 1 1 auto; min-height: 0; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .toggle { display: flex; align-items: center; gap: 8px; height: 42px; font-size: 15px; }
 .toggle input { width: 22px; height: 22px; }
-.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
 .seg button { height: 38px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; }
 .seg button.on { color: #fff; border-color: transparent; }
 .rv { padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
@@ -104,7 +104,6 @@ body:not(.owner) .owner-only { display: none !important; }
 .mode { flex: 0 0 auto; height: 42px; padding: 0 10px; border-radius: 10px; border: 0; color: #fff; font-size: 14px; font-weight: 700; white-space: nowrap; }
 .mode.place { background: #e03131; }
 .mode.food { background: var(--primary); }
-.chip.visit { background: #e03131; border-color: #e03131; color: #fff; }
 /* 맛집 추가·건의: 지도 왼쪽 목록 */
 #addPanel { position: absolute; top: 0; left: 0; bottom: 0; width: min(340px, 56%); z-index: 4; background: var(--bg); border-right: 1px solid var(--line); box-shadow: 4px 0 14px rgba(0,0,0,.12); display: flex; flex-direction: column; }
 .ap-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 4px 12px; font-size: 15px; }
@@ -138,3 +137,5 @@ body:not(.owner) .owner-only { display: none !important; }
   .ad-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ap-sec { max-height: 90px; }
 }
+.chip .cnt { font-size: 11px; color: var(--sub); margin-left: 2px; }
+.chip.on .cnt { color: inherit; opacity: .8; }

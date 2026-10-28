@@ -3,12 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#2f9e44">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-title" content="호야맛집">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>나의 맛집 지도</title>
-<link rel="stylesheet" href="style.css?v=1027e">
-<script src="config.js"></script>
+<title>호야맛집</title>
+<link rel="stylesheet" href="style.css?v=1028b">
+<script src="config.js?v=1028b"></script>
 </head>
 <body>
 <div id="app">
@@ -62,6 +66,7 @@
     <button data-view="map" class="on">🗺<span>지도</span></button>
     <button data-view="list">☰<span>목록</span></button>
     <button id="btnLocate">📍<span>내 위치</span></button>
+    <button id="btnMenu">🍴<span>메뉴</span></button>
     <button id="btnAdd">＋<span id="addLabel">추가</span></button>
     <button id="btnInbox" class="owner-only">📥<span>건의함</span><b id="inboxBadge" hidden></b></button>
   </nav>
@@ -71,6 +76,6 @@
   <div id="toast" hidden></div>
   <div id="gate" hidden></div>
 </div>
-<script src="app.js?v=1027e"></script>
+<script src="app.js?v=1028b"></script>
 </body>
 </html>
