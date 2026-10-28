@@ -88,7 +88,7 @@
   function svgImg(svg, w, h, ox, oy) {
     return new kakao.maps.MarkerImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg), new kakao.maps.Size(w, h), { offset: new kakao.maps.Point(ox, oy) });
   }
-  // 저장 식당 핀: 지름 13px, 가운데 밝고 바깥 진한 그라데이션 (작아도 도드라지게)
+  // 저장 식당 핀: 지름 15px, 가운데 밝고 바깥 진한 그라데이션 (작아도 도드라지게)
   function shade(hex, k) {   // k<0 어둡게, k>0 밝게
     const n = parseInt(hex.slice(1), 16), f = c => Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k);
     return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(f).map(x => x.toString(16).padStart(2, '0')).join('');
@@ -96,10 +96,10 @@
   function pinImg(color) {
     if (markerImgs[color]) return markerImgs[color];
     const id = 'g' + color.slice(1);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17"><defs><radialGradient id="${id}" cx="35%" cy="32%" r="70%">` +
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19"><defs><radialGradient id="${id}" cx="35%" cy="32%" r="70%">` +
       `<stop offset="0" stop-color="${shade(color, 0.75)}"/><stop offset="0.45" stop-color="${color}"/><stop offset="1" stop-color="${shade(color, -0.45)}"/></radialGradient></defs>` +
-      `<circle cx="8.5" cy="9.3" r="7" fill="rgba(0,0,0,.28)"/><circle cx="8.5" cy="8.5" r="6.5" fill="url(#${id})" stroke="#fff" stroke-width="1.4"/></svg>`;
-    return (markerImgs[color] = svgImg(svg, 17, 17, 8.5, 8.5));
+      `<circle cx="9.5" cy="10.3" r="8" fill="rgba(0,0,0,.28)"/><circle cx="9.5" cy="9.5" r="7.5" fill="url(#${id})" stroke="#fff" stroke-width="1.5"/></svg>`;
+    return (markerImgs[color] = svgImg(svg, 19, 19, 9.5, 9.5));
   }
   const colorOf = p => (S.role === 'owner' ? (PREF[p.pf] || PREF['저장만']).color : (p.ver ? PREF['검증완료'].color : PREF['저장만'].color));
 
