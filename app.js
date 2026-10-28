@@ -280,7 +280,7 @@
       } else if (b.dataset.c) toggleArr(S.f.cats, b.dataset.c);
       else if (b.dataset.p) toggleArr(S.f.prefs, b.dataset.p);
       buildChips(); saveUI(); refresh();
-      showResultsOnMap();
+      noticeIfNoneInView();
     });
     $('q').addEventListener('input', () => {   // 입력 중에는 아무것도 바꾸지 않음. 지우면 검색 해제
       if (!$('q').value.trim() && S.f.q) { S.f.q = ''; buildChips(); refresh(); }
@@ -326,12 +326,16 @@
     window.addEventListener('popstate', () => { if (!$('sheet').hidden) hideSheet(); });
   }
 
-  // 현재 지도 화면에 결과가 하나도 없으면 결과가 있는 곳으로 지도를 옮김
-  function showResultsOnMap() {
+  // 칩을 바꿔도 지도는 움직이지 않음 (지도 이동은 사용자가 직접, 또는 장소·식당을 골랐을 때만)
+  // 지금 화면에 해당 식당이 하나도 없으면, 가장 가까운 곳을 알려 주기만 함
+  function noticeIfNoneInView() {
     if (!map || !S.filtered.length || S.view !== 'map') return;
     const b = map.getBounds();
-    const any = S.filtered.some(p => b.contain(new kakao.maps.LatLng(p.la, p.lo)));
-    if (!any) fitFiltered();
+    if (S.filtered.some(p => b.contain(new kakao.maps.LatLng(p.la, p.lo)))) return;
+    const c = map.getCenter(), o = [c.getLat(), c.getLng()];
+    let best = null, bd = Infinity;
+    S.filtered.forEach(p => { const d = dist(o, [p.la, p.lo]); if (d < bd) { bd = d; best = p; } });
+    if (best) toast(`이 화면에는 없습니다 · 가장 가까운 곳: ${best.n} (${fmtDist(bd)})`, 3500);
   }
   function setMapCount(n) {
     const el = $('mapCount');
@@ -377,6 +381,7 @@
   }
   const fmtDist = m => (m < 1000 ? Math.round(m) + 'm' : (m / 1000).toFixed(1) + 'km');
 
+  // 지역(시도·시군구)을 직접 고른 경우에만 그 지역 전체가 보이게 지도를 맞춤
   // ---------- 필터 (본인·친구 공통, 휴대폰에서 바로 거름) ----------
   const isVer = p => (S.role === 'owner' ? p.pf === '검증완료' : p.ver);
   function applyFilters(listOnly) {
