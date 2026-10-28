@@ -171,6 +171,7 @@
     if (S.role === 'friend') toast(`${S.name}님, 환영합니다`);
     setView(S.view);
     locate(true, true);   // 시작하면 내 위치 주변으로
+    setTimeout(showInstallBar, 1500);
   }
 
   function setData(d) {
@@ -752,7 +753,7 @@
   function openAdd() {
     if (!$('addPanel').hidden) return closeAdd();   // 추가 버튼을 다시 누르면 닫힘
     const owner = S.role === 'owner';
-    closeFilter(); setView('map');
+    closeFilter(); setView('map'); hideInstallBar();
     $('addPanel').innerHTML = `<div class="ap-head"><b>${owner ? '맛집 추가' : '맛집 건의'}</b><button id="apX" type="button" aria-label="닫기">✕</button></div>
       <div class="ap-in"><input id="adIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="식당 이름 또는 카카오맵 링크"><button id="adFind" class="icon" aria-label="찾기">🔍</button></div>
       <div id="adRes"><div class="sub ap-hint">식당 이름(예: 이도곰탕 강남)이나 카카오맵 공유 링크로 찾으세요. 후보가 지도에 번호로 표시되고, 가 본 곳이 맞으면 <b>${owner ? '추가' : '건의'}</b>를 누르면 됩니다.</div></div>
@@ -888,6 +889,50 @@
         } catch (er) { toast(er.message, 3500); b.disabled = false; }
       };
     } catch (e) { $('ibList').textContent = e.message; }
+  }
+
+  // ---------- 앱 설치 안내 버튼 ----------
+  // 카톡 등 앱 안의 브라우저 → [크롬으로 열기] / 크롬(미설치) → [앱 설치] / 아이폰 사파리 → [홈 화면에 추가 방법] / 설치된 앱 → 표시 안 함
+  const UA = navigator.userAgent;
+  const IS_ANDROID = /Android/i.test(UA);
+  const IN_APP = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp/i.test(UA) || (IS_ANDROID && /; wv\)/.test(UA));
+  const IS_STANDALONE = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; showInstallBar(); });
+  window.addEventListener('appinstalled', () => { installEvt = null; hideInstallBar(); toast('호야맛집 앱을 설치했습니다. 홈 화면의 아이콘으로 열어 주세요', 4000); });
+
+  function installHidden() { const t = store.get('mz_install_hide', 0); return t && Date.now() - t < 7 * 864e5; }   // ✕를 누르면 7일간 숨김
+  function hideInstallBar() { const b = $('installBar'); if (b) b.hidden = true; document.body.classList.remove('has-ib'); }
+  function showInstallBar() {
+    const b = $('installBar'); if (!b || IS_STANDALONE() || installHidden()) return;
+    let label = '', sub = '', act = null;
+    if (IN_APP) {
+      label = '🌐 크롬으로 열기'; sub = '앱으로 설치하려면 크롬에서 열어 주세요';
+      act = openInChrome;
+    } else if (installEvt) {
+      label = '📲 호야맛집 앱 설치'; sub = '홈 화면에 아이콘이 생기고 앱처럼 열립니다';
+      act = async () => { const ev = installEvt; installEvt = null; hideInstallBar(); ev.prompt(); try { await ev.userChoice; } catch (e) { /* 무시 */ } };
+    } else if (IS_IOS) {
+      label = '📲 홈 화면에 추가하는 방법'; sub = '사파리에서 공유 버튼 → 홈 화면에 추가';
+      act = () => openSheet(`<div class="sh-name">📲 아이폰에 설치하기</div>
+        <div class="note" style="line-height:1.8;font-size:15px">① <b>사파리</b>로 이 화면을 엽니다<br>② 아래쪽 <b>공유 버튼</b>(□↑)을 누릅니다<br>③ <b>홈 화면에 추가</b>를 누릅니다<br>④ 오른쪽 위 <b>추가</b>를 누릅니다</div>`);
+    } else return;
+    b.innerHTML = `<button type="button" class="ib-go"><b>${label}</b><span>${sub}</span></button><button type="button" class="ib-x" aria-label="닫기">✕</button>`;
+    b.querySelector('.ib-go').onclick = act;
+    b.querySelector('.ib-x').onclick = () => { store.set('mz_install_hide', Date.now()); hideInstallBar(); };
+    b.hidden = false; document.body.classList.add('has-ib');   // 알림 문구가 버튼에 가리지 않게 위로
+  }
+  function openInChrome() {
+    const url = location.href;
+    if (IS_IOS) { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(url); return; }
+    location.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
+    // 크롬으로 넘어가지 않으면 (카톡 버전에 따라 막힐 수 있음) 주소를 복사하고 안내
+    setTimeout(() => {
+      if (document.hidden) return;
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(
+        () => toast('주소를 복사했습니다. 크롬을 열어 주소창에 붙여넣어 주세요', 5000),
+        () => toast('오른쪽 위 ⋮ → 다른 브라우저로 열기를 눌러 주세요', 5000));
+    }, 1500);
   }
 
   // ---------- 실행 (모든 설정·함수가 정의된 뒤에 시작해야 함) ----------

@@ -139,3 +139,11 @@ body:not(.owner) .owner-only { display: none !important; }
 }
 .chip .cnt { font-size: 11px; color: var(--sub); margin-left: 2px; }
 .chip.on .cnt { color: inherit; opacity: .8; }
+
+/* 앱 설치 안내 버튼 (지도 아래쪽) */
+#installBar { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 6; display: flex; align-items: stretch; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.25); max-width: 480px; margin: 0 auto; }
+#installBar .ib-go { flex: 1; border: 0; background: var(--g); color: #fff; padding: 10px 12px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+#installBar .ib-go b { font-size: 16px; }
+#installBar .ib-go span { font-size: 12px; opacity: .9; }
+#installBar .ib-x { flex: 0 0 44px; border: 0; background: #2b8a3e; color: #fff; font-size: 16px; }
+body.has-ib #toast { bottom: calc(var(--nav-h) + 92px + env(safe-area-inset-bottom)); }
