@@ -761,7 +761,7 @@
     closeFilter(); setView('map'); hideInstallBar();
     $('addPanel').innerHTML = `<div class="ap-head"><b>${owner ? '맛집 추가' : '맛집 건의'}</b><button id="apX" type="button" aria-label="닫기">✕</button></div>
       <div class="ap-in"><input id="adIn" type="search" enterkeyhint="search" autocomplete="off" placeholder="식당 이름 또는 카카오맵 링크"><button id="adFind" class="icon" aria-label="찾기">🔍</button></div>
-      <div id="adRes"><div class="sub ap-hint">식당 이름(예: 이도곰탕 강남)이나 카카오맵 공유 링크로 찾으세요. 후보가 지도에 번호로 표시되고, 가 본 곳이 맞으면 <b>${owner ? '추가' : '건의'}</b>를 누르면 됩니다.</div></div>
+      <div id="adRes"><div class="sub ap-hint">식당 이름이나 카카오맵 공유 링크로 찾으세요. 후보가 지도에 번호로 표시되고, 가 본 곳이 맞으면 <b>${owner ? '추가' : '건의'}</b>를 누르면 됩니다.</div></div>
       ${owner ? '' : '<div class="ap-sec"><b>내 건의 현황</b><div id="mySg" class="sub">불러오는 중…</div></div>'}`;
     $('addPanel').hidden = false;
     $('apX').onclick = closeAdd;
