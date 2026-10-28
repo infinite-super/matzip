@@ -125,8 +125,6 @@
   window.addEventListener('error', e => { if (!$('gate').hidden) return; banner('오류: ' + (e.message || '알 수 없음') + ' — 화면을 캡처해 알려 주세요'); });
   window.addEventListener('unhandledrejection', e => { const m = e.reason && e.reason.message; if (m) banner('오류: ' + m); });
   $('mapCount').textContent = '불러오는 중…';
-  restoreUI();
-  start();
 
   async function start() {
     try {
@@ -880,4 +878,8 @@
       };
     } catch (e) { $('ibList').textContent = e.message; }
   }
+
+  // ---------- 실행 (모든 설정·함수가 정의된 뒤에 시작해야 함) ----------
+  restoreUI();
+  start();
 })();
