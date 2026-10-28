@@ -363,7 +363,9 @@
       if (moveMap && S.visit && !initial) clearVisit(true);   // 내 위치 버튼 = 방문지 해제
       if (moveMap && !S.visit) { map.setLevel(5); map.setCenter(ll); }
       if (S.f.sort === 'auto' || S.f.sort === 'dist') refresh();
-    }, () => toast(initial ? '위치 권한을 허용하면 내 주변부터 보여줍니다' : '위치 권한을 허용해 주세요', 3000), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+    }, () => toast(initial ? '위치 권한을 허용하면 내 주변부터 보여줍니다' : '위치 권한을 허용해 주세요', 3000), // 위치는 필요할 때 한 번만 확인 (계속 추적하지 않음).
+      // 앱 시작 때: GPS 대신 와이파이·기지국 위치(빠르고 배터리 적게), 5분 안의 위치는 다시 쓰기 / 내 위치 버튼: GPS로 정확하게
+      initial ? { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 } : { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
   }
 
   function dist(a, b) {
