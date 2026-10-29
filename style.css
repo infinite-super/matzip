@@ -149,3 +149,5 @@ body.has-ib #toast { bottom: calc(var(--nav-h) + 92px + env(safe-area-inset-bott
 #legend { position: absolute; top: 8px; right: 8px; z-index: 2; background: rgba(255,255,255,.9); border-radius: 10px; padding: 4px 8px; font-size: 11px; color: #343a40; display: flex; flex-direction: column; gap: 2px; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 #legend span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 #legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.1); }
+.btn.danger { background: var(--bg); color: #e03131; border-color: #ffc9c9; }
+.btn.danger.armed { background: #e03131; color: #fff; border-color: #e03131; }

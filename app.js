@@ -759,7 +759,8 @@
       <div class="fld"><label>대분류 ${p.kc ? '(카카오: ' + esc(p.kc) + ')' : ''}</label>
         <select id="edC">${S.categories.map(c => `<option${c === p.c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
       <button class="btn primary" id="edSave" style="width:100%">저장</button>
-      ${p.f ? `<div class="sub" style="margin-top:8px">카카오 폴더: ${esc(p.f)}</div>` : ''}</div>`;
+      ${p.f ? `<div class="sub" style="margin-top:8px">카카오 폴더: ${esc(p.f)}</div>` : ''}
+      <button class="btn small danger" id="edDel" style="width:100%;margin-top:14px">🗑 이 식당 삭제</button></div>`;
   }
 
   function bindOwnerEdit(p) {
@@ -774,6 +775,20 @@
         toast(`'${v}'(으)로 바꿨습니다`); applyFilters();
       } catch (e) { toast(e.message, 3500); }
     });
+    // 삭제: 두 번 눌러야 삭제 (실수 방지). 지운 식당은 구글 시트 '삭제된식당'에 보관
+    let armed = 0;
+    $('edDel').onclick = async () => {
+      const b = $('edDel');
+      if (!armed) { armed = setTimeout(() => { armed = 0; b.textContent = '🗑 이 식당 삭제'; b.classList.remove('armed'); }, 4000); b.textContent = '정말 삭제할까요? 한 번 더 누르면 삭제됩니다'; b.classList.add('armed'); return; }
+      clearTimeout(armed); b.disabled = true; b.textContent = '삭제 중…';
+      try {
+        await api('delete', { id: cur.id });
+        if (cur._mk) { clusterer.removeMarker(cur._mk); cur._mk = null; }
+        S.places = S.places.filter(x => x !== cur); delete S.byId[cur.id];
+        saveCache(); closeSheet(); applyFilters();
+        toast(`'${cur.n}'을(를) 삭제했습니다 (구글 시트 '삭제된식당'에 보관)`, 3500);
+      } catch (e) { toast(e.message, 3500); b.disabled = false; b.textContent = '🗑 이 식당 삭제'; armed = 0; }
+    };
     const v1el = $('edV1'), v2el = $('edV2');
     $('edSave').onclick = async () => {
       // 검증 메뉴를 넣으면 서버가 자동으로 검증완료로 바꿈
@@ -944,7 +959,7 @@
       const r = await api('suggestions');
       setInbox(r.list.length);
       $('ibList').innerHTML = r.list.length ? r.list.map(x => `<div class="res">
-        <div class="nm">${esc(x.name)}${x.dup ? '<span class="badge b-g">이미 등록됨</span>' : ''}</div>
+        <div class="nm">${esc(x.name)}${x.dup ? '<span class="badge b-g">이미 등록됨</span>' : ''}${x.del ? '<span class="badge b-w">예전에 삭제함</span>' : ''}</div>
         <div class="sub">${esc(x.who)} · ${esc(x.dt)}</div>
         <div class="sub">${esc(x.cat)}</div><div class="sub">${esc(x.addr)}</div>
         ${x.reason ? `<div class="note">💬 ${esc(x.reason)}</div>` : ''}
