@@ -33,7 +33,7 @@ select { height: 38px; border: 1px solid var(--line); border-radius: 8px; paddin
 #banner { padding: 7px 12px; font-size: 13px; background: #fff4e6; color: #d9480f; text-align: center; }
 main { position: relative; flex: 1 1 auto; min-height: 0; }
 #map { position: absolute; inset: 0; z-index: 0; }
-#mapCount { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(33,37,41,.82); color: #fff; font-size: 13px; padding: 5px 10px; border-radius: 14px; pointer-events: none; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mapCount { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(33,37,41,.82); color: #fff; font-size: 13px; padding: 5px 10px; border-radius: 14px; pointer-events: none; max-width: calc(100% - 120px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #listView { position: absolute; inset: 0; z-index: 5; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; }
 #listBar { display: flex; justify-content: space-between; padding: 8px 12px; font-size: 13px; color: var(--sub); border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
 #list { list-style: none; margin: 0; padding: 0; }
@@ -70,9 +70,6 @@ main { position: relative; flex: 1 1 auto; min-height: 0; }
 .btn.small { height: 38px; font-size: 14px; }
 .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
 .sec h4 { margin: 0 0 8px; font-size: 14px; }
-.stars { display: flex; gap: 4px; }
-.stars button { width: 40px; height: 40px; border: 0; background: none; font-size: 26px; color: #ced4da; padding: 0; }
-.stars button.on { color: #fab005; }
 .fld { margin: 8px 0; }
 .fld label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 3px; }
 .fld input[type=text], .fld textarea, .fld select { width: 100%; height: 42px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--soft); font-size: 16px; }
@@ -147,3 +144,8 @@ body:not(.owner) .owner-only { display: none !important; }
 #installBar .ib-go span { font-size: 12px; opacity: .9; }
 #installBar .ib-x { flex: 0 0 44px; border: 0; background: #2b8a3e; color: #fff; font-size: 16px; }
 body.has-ib #toast { bottom: calc(var(--nav-h) + 92px + env(safe-area-inset-bottom)); }
+.warn { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #fff4e6; color: #d9480f; font-size: 14px; line-height: 1.5; }
+.warn.gray { background: var(--soft); color: var(--sub); }
+#legend { position: absolute; top: 8px; right: 8px; z-index: 2; background: rgba(255,255,255,.9); border-radius: 10px; padding: 4px 8px; font-size: 11px; color: #343a40; display: flex; flex-direction: column; gap: 2px; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+#legend span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+#legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.1); }

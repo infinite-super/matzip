@@ -11,25 +11,61 @@
 
   const PREF = {
     '검증완료': { color: '#2f9e44', cls: 'b-g' }, '우선방문': { color: '#7048e8', cls: 'b-p' },
-    '저장만': { color: '#f76707', cls: 'b-o' }, '제주현지추천': { color: '#1098ad', cls: 'b-j' }
+    '찜한 곳': { color: '#f76707', cls: 'b-o' }, '친구추천': { color: '#1098ad', cls: 'b-j' }
   };
-  const PREF_ORDER = { '검증완료': 0, '제주현지추천': 1, '우선방문': 2, '저장만': 3 };
+  const PREF_ORDER = { '검증완료': 0, '친구추천': 1, '우선방문': 2, '찜한 곳': 3 };
   const PAGE = 80;
 
   const S = {
     key: '', role: '', name: '', categories: [], prefs: Object.keys(PREF),
     places: [], byId: {}, filtered: [], shown: PAGE, view: 'map', pos: null, menus: [],
-    f: { q: '', vm: '', cats: [], prefs: [], sido: '', sgg: '', quick: [], sort: 'auto', inView: false },
+    f: { q: '', vm: '', cats: [], prefs: [], sido: '', sgg: '', quick: [], sort: 'auto', inView: false, st: '' },   // st: 영업 상태 ('' 폐업 제외 · sus 폐업 의심만 · all 폐업 포함)
     visit: null
   };
   let map = null, clusterer = null, meMarker = null, markerImgs = {}, visitMarker = null;
 
   // ---------- 키 확인 ----------
   const urlKey = new URLSearchParams(location.search).get('k');
-  if (urlKey) { S.key = urlKey.replace(/[^A-Za-z0-9]/g, ''); store.set('mz_key', S.key); }
+  if (urlKey) {
+    S.key = urlKey.replace(/[^A-Za-z0-9]/g, ''); store.set('mz_key', S.key);
+    // 주소창에서 키를 지움 (화면 캡처·주소 복사로 키가 퍼지지 않게). 키는 이 휴대폰에만 저장됨
+    try { history.replaceState(null, '', location.pathname); } catch (e) { /* 무시 */ }
+  }
   else S.key = store.get('mz_key', '');
   if (!S.key) return gate('초대받은 링크로 접속해 주세요', '이 지도는 초대받은 분만 볼 수 있습니다.');
   if (!CFG.API_URL || /여기에/.test(CFG.API_URL)) return gate('설정 필요', 'config.js에 Apps Script 웹앱 주소를 입력하세요.');
+
+  // ---------- 기기 구별 (링크 공유 방지) ----------
+  // 개인정보는 읽지 않음: 이 휴대폰(브라우저)에 저장한 임의의 표시값 + 일반 명칭(휴대폰·안드로이드·크롬 등)만 서버에 보냄
+  const UA = navigator.userAgent;
+  const IS_IOS = /iPhone|iPad|iPod/i.test(UA);
+  const IS_ANDROID = /Android/i.test(UA);
+  const IN_APP = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp/i.test(UA) || (IS_ANDROID && /; wv\)/.test(UA));
+  const IS_STANDALONE = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  function deviceId() {
+    let d = store.get('mz_dev', '');
+    if (!/^[a-f0-9]{16,32}$/.test(d)) {
+      const a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a);
+      d = Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); store.set('mz_dev', d);
+    }
+    return d;
+  }
+  function deviceLabel() {
+    const kind = /iPad|Tablet/i.test(UA) || (IS_ANDROID && !/Mobile/i.test(UA)) ? '태블릿' : /Mobi|iPhone|Android/i.test(UA) ? '휴대폰' : 'PC';
+    const os = IS_ANDROID ? '안드로이드' : IS_IOS ? 'iOS' : /Windows/i.test(UA) ? '윈도우' : /Mac OS/i.test(UA) ? '맥' : /Linux/i.test(UA) ? '리눅스' : '기타';
+    const br = /SamsungBrowser/i.test(UA) ? '삼성인터넷' : /Edg\//.test(UA) ? '엣지' : /Whale/i.test(UA) ? '웨일' : /Firefox/i.test(UA) ? '파이어폭스'
+      : /Chrome|CriOS/i.test(UA) ? '크롬' : /Safari/i.test(UA) ? '사파리' : '브라우저';
+    return `${kind}·${os}·${br}${IS_STANDALONE() ? '(앱)' : ''}`;
+  }
+  // 카톡 등 앱 안의 브라우저: 사용하지 않고 크롬으로 안내 (설치와 등록은 크롬에서)
+  if (IN_APP) {
+    const g = $('gate'); g.hidden = false;
+    g.innerHTML = `<h2>크롬에서 열어 주세요</h2><div>호야맛집은 크롬에서 열고, 그 화면에서 앱으로 설치해 사용합니다.</div>
+      <button type="button" class="btn primary" id="gateChrome" style="margin-top:18px;width:240px">🌐 크롬으로 열기</button>
+      <div class="sub" style="margin-top:10px">안 열리면 오른쪽 위 ⋮ → <b>다른 브라우저로 열기</b></div>`;
+    $('gateChrome').onclick = () => openInChrome(`${location.origin}${location.pathname}?k=${encodeURIComponent(S.key)}`);
+    return;
+  }
 
   function gate(title, msg) {
     const g = $('gate'); g.hidden = false;
@@ -42,7 +78,7 @@
   function api(action, data) {
     return new Promise((resolve, reject) => {
       const cb = '__mz' + Date.now().toString(36) + (apiSeq++);
-      const p = JSON.stringify(Object.assign({ k: S.key, action }, data || {}));
+      const p = JSON.stringify(Object.assign({ k: S.key, action, d: deviceId(), dl: deviceLabel() }, data || {}));
       const url = CFG.API_URL + '?cb=' + cb + '&p=' + encodeURIComponent(p);
       if (url.length > 7800) return reject(new Error('입력 내용이 너무 깁니다. 메모·한줄평을 줄여 주세요.'));
       const s = document.createElement('script');
@@ -87,7 +123,7 @@
   function svgImg(svg, w, h, ox, oy) {
     return new kakao.maps.MarkerImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg), new kakao.maps.Size(w, h), { offset: new kakao.maps.Point(ox, oy) });
   }
-  // 저장 식당 핀: 지름 15px, 가운데 밝고 바깥 진한 그라데이션 (작아도 도드라지게)
+  // 저장 식당 핀: 지름 18px, 가운데 밝고 바깥 진한 그라데이션 (작아도 도드라지게)
   function shade(hex, k) {   // k<0 어둡게, k>0 밝게
     const n = parseInt(hex.slice(1), 16), f = c => Math.round(k < 0 ? c * (1 + k) : c + (255 - c) * k);
     return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(f).map(x => x.toString(16).padStart(2, '0')).join('');
@@ -95,12 +131,14 @@
   function pinImg(color) {
     if (markerImgs[color]) return markerImgs[color];
     const id = 'g' + color.slice(1);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19"><defs><radialGradient id="${id}" cx="35%" cy="32%" r="70%">` +
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><defs><radialGradient id="${id}" cx="35%" cy="32%" r="70%">` +
       `<stop offset="0" stop-color="${shade(color, 0.75)}"/><stop offset="0.45" stop-color="${color}"/><stop offset="1" stop-color="${shade(color, -0.45)}"/></radialGradient></defs>` +
-      `<circle cx="9.5" cy="10.3" r="8" fill="rgba(0,0,0,.28)"/><circle cx="9.5" cy="9.5" r="7.5" fill="url(#${id})" stroke="#fff" stroke-width="1.5"/></svg>`;
-    return (markerImgs[color] = svgImg(svg, 19, 19, 9.5, 9.5));
+      `<circle cx="11" cy="11.9" r="9.5" fill="rgba(0,0,0,.28)"/><circle cx="11" cy="11" r="9" fill="url(#${id})" stroke="#fff" stroke-width="1.7"/></svg>`;
+    return (markerImgs[color] = svgImg(svg, 22, 22, 11, 11));
   }
-  const colorOf = p => (S.role === 'owner' ? (PREF[p.pf] || PREF['저장만']).color : (p.ver ? PREF['검증완료'].color : PREF['저장만'].color));
+  const colorOf = p => (p.ok === '폐업' ? '#adb5bd' : S.role === 'owner' ? (PREF[p.pf] || PREF['찜한 곳']).color
+    : (p.ver ? PREF['검증완료'] : p.fr ? PREF['친구추천'] : PREF['찜한 곳']).color);   // 친구 화면: 검증(녹색) · 친구 추천(청록) · 찜한 곳(주황)
+  const isSus = p => p.ok === '검색안됨' || p.cl === 1;   // 폐업 의심 (본인: ok, 친구: cl)
 
   function initMap() {
     const saved = store.get('mz_map_' + S.role, null);
@@ -140,21 +178,26 @@
       try { localStorage.removeItem('mz_owner_cache'); } catch (e) { /* 예전 저장 형식 정리 */ }
       const cached = store.get('mz_cache', null);
       const kakaoP = loadKakao();
-      let initP = api('init');
+      const useCache = cached && cached.key === S.key && cached.places;
+      let initP = api('init', useCache && cached.ver ? { ver: cached.ver } : {});   // 바뀐 게 없으면 서버가 목록을 다시 보내지 않음
       let data;
-      if (cached && cached.key === S.key) {   // 이전 데이터로 먼저 표시 후 새로 고침
-        data = { role: cached.role, name: cached.name, categories: cached.categories, prefs: cached.prefs, places: cached.places, pending: 0 };
+      if (useCache) {   // 이전 데이터로 먼저 표시 후 새로 고침
+        data = { role: cached.role, name: cached.name, categories: cached.categories, prefs: cached.prefs, places: cached.places, pending: 0, ver: cached.ver };
       } else {
         data = await initP; initP = null;
       }
       await kakaoP.catch(e => { throw new Error(e.message + '\n(카카오 JavaScript 키와 사이트 도메인 등록을 확인하세요)'); });
       boot(data);
       if (initP) {
-        initP.then(fresh => { if (fresh.role === S.role) { setData(fresh); applyFilters(); } })
-          .catch(e => { if (/초대/.test(e.message)) { store.set('mz_cache', null); gate('접속 권한 없음', e.message); } });
+        initP.then(fresh => {
+          if (fresh.role !== S.role) return;
+          if (fresh.same) { if (S.role === 'owner') setInbox(fresh.pending || 0); return; }   // 그대로면 다시 그리지 않음
+          setData(fresh); applyFilters();
+        })
+          .catch(e => { if (/초대|기기/.test(e.message)) { store.set('mz_cache', null); gate(/기기/.test(e.message) ? '등록되지 않은 기기' : '접속 권한 없음', e.message); } });
       }
     } catch (e) {
-      if (/초대/.test(e.message)) { store.set('mz_cache', null); gate('접속 권한 없음', e.message); }
+      if (/초대|기기/.test(e.message)) { store.set('mz_cache', null); gate(/기기/.test(e.message) ? '등록되지 않은 기기' : '접속 권한 없음', e.message); }
       else gate('불러오기 실패', e.message);
     }
   }
@@ -169,12 +212,16 @@
     bindUI();
     setData(data); applyFilters();
     if (S.role === 'friend') toast(`${S.name}님, 환영합니다`);
+    // 지도 색 범례 (오른쪽 위)
+    $('legend').innerHTML = (S.role === 'owner' ? EDIT_PREFS().map(x => [PREF[x].color, x]) : [[PREF['검증완료'].color, '검증'], [PREF['친구추천'].color, '친구 추천'], [PREF['찜한 곳'].color, '찜한 곳']])
+      .map(([c, t]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('');
     setView(S.view);
     locate(true, true);   // 시작하면 내 위치 주변으로
     setTimeout(showInstallBar, 1500);
   }
 
   function setData(d) {
+    S.ver = d.ver || '';
     S.places = d.places || [];
     S.byId = {};
     const menus = new Set();
@@ -188,14 +235,15 @@
     fillRegions();
     if (S.role === 'owner') setInbox(d.pending || 0);
     if (clusterer) { clusterer.clear(); S.places.forEach(p => { p._mk = null; }); }
-    saveCache();
+    saveCache(true);
   }
   // 검색용 문자열 (이름·지역·메뉴·메모 등)
   function indexPlace(p) { p._hay = [p.n, p.sd, p.sg, p.dg, p.a, p.c, p.m, p.v1, p.v2, p.t, p.memo, p.pc, p.kc, p.f, p.pf].join(' ').toLowerCase(); return p; }
   // 받은 데이터를 휴대폰에 저장 (다음 실행 때 바로 표시)
-  function saveCache() {
+  function saveCache(keepVer) {
+    if (!keepVer) S.ver = '';
     const strip = p => { const q = Object.assign({}, p); delete q._mk; delete q._hay; delete q._d; return q; };
-    store.set('mz_cache', { key: S.key, role: S.role, name: S.name, categories: S.categories, prefs: S.prefs, places: S.places.map(strip) });
+    store.set('mz_cache', { key: S.key, role: S.role, name: S.name, categories: S.categories, prefs: S.prefs, places: S.places.map(strip), ver: S.ver });
   }
 
   function setInbox(n) { const b = $('inboxBadge'); b.hidden = !n; b.textContent = n; }
@@ -206,7 +254,7 @@
   const QUICK_FRIEND = [{ id: 'all', label: '전체' }, { id: 'ver', label: '✔ 검증된 곳' }];
   const QUICK_CATS = ['한식', '중식', '일식', '분식'];
   const QUICK_LABEL = { pri: '우선방문', ver: '검증완료' };
-  const EDIT_PREFS = () => S.prefs.filter(x => x !== '제주현지추천');   // 메뉴에서 제외 (기존 표시는 유지)
+  const EDIT_PREFS = () => S.prefs.filter(x => PREF[x]);
   const origin = () => (S.visit ? [S.visit.la, S.visit.lo] : S.pos);
 
   function activeQuick() {
@@ -215,7 +263,7 @@
     return '';
   }
   function filterLabel() {
-    const parts = S.f.quick.map(x => QUICK_LABEL[x] || x).concat(S.f.cats, S.f.prefs, S.f.sgg || S.f.sido || [], S.f.q ? ['"' + S.f.q + '"'] : [], S.f.vm ? ['🍴' + S.f.vm] : []);
+    const parts = S.f.quick.map(x => QUICK_LABEL[x] || x).concat(S.f.cats, S.f.prefs, S.f.sgg || S.f.sido || [], S.f.q ? ['"' + S.f.q + '"'] : [], S.f.vm ? ['🍴' + S.f.vm] : [], S.f.st === 'sus' ? ['폐업 의심'] : S.f.st === 'all' ? ['폐업 포함'] : []);
     const base = parts.length ? parts.join(' · ') : '전체';
     return S.visit ? `📍${S.visit.name} · ${base}` : base;
   }
@@ -255,7 +303,9 @@
     S.f.cats = S.f.cats || []; S.f.prefs = S.f.prefs || [];
     if (S.f.quick.length + S.f.cats.length + S.f.prefs.length > 1) { S.f.quick = []; S.f.cats = []; S.f.prefs = []; }
     S.view = store.get('mz_view', 'map');
-    $('sort').value = S.f.sort || 'auto';
+    if (['auto', 'dist', 'recent'].indexOf(S.f.sort) < 0) S.f.sort = 'auto';   // 삭제된 정렬(평점 순)은 자동으로
+    $('sort').value = S.f.sort;
+    S.f.st = ['', 'sus', 'all'].indexOf(S.f.st) >= 0 ? S.f.st : ''; $('stSel').value = S.f.st;
     $('inView').checked = !!S.f.inView;
   }
   function saveUI() { store.set('mz_filters', Object.assign({}, S.f, { q: '', vm: '' })); store.set('mz_view', S.view); }
@@ -295,8 +345,9 @@
     $('sido').onchange = () => { S.f.sido = $('sido').value; S.f.sgg = ''; fillSgg(); saveUI(); applyFilters(); fitFiltered(); };
     $('sgg').onchange = () => { S.f.sgg = $('sgg').value; saveUI(); applyFilters(); fitFiltered(); };
     $('sort').onchange = () => { S.f.sort = $('sort').value; if (S.f.sort === 'dist' && !S.pos) locate(false); saveUI(); refresh(); };
+    $('stSel').onchange = () => { S.f.st = $('stSel').value; saveUI(); closeFilter(); applyFilters(); if (S.f.st === 'sus' && S.filtered.length) setView('list'); };
     $('inView').onchange = () => { S.f.inView = $('inView').checked; saveUI(); applyFilters(true); };
-    $('btnReset').onclick = () => { clearFilters({ sort: 'auto', inView: false }); $('sort').value = 'auto'; $('inView').checked = false; buildChips(); saveUI(); refresh(); };
+    $('btnReset').onclick = () => { clearFilters({ sort: 'auto', inView: false, st: '' }); $('sort').value = 'auto'; $('inView').checked = false; $('stSel').value = ''; buildChips(); saveUI(); refresh(); };
     document.querySelectorAll('#bottom [data-view]').forEach(b => { b.onclick = () => setView(b.dataset.view); });
     $('btnLocate').onclick = () => locate(true);
     $('btnMenu').onclick = openMenus;
@@ -402,15 +453,15 @@
       if (q.indexOf('ver') >= 0 && !isVer(p)) return false;
       if (toks.length && !toks.every(t => p._hay.indexOf(t) >= 0)) return false;
       if (f.vm && p.v1 !== f.vm && p.v2 !== f.vm) return false;
+      if (f.st !== 'all' && p.ok === '폐업') return false;
+      if (f.st === 'sus' && !isSus(p)) return false;
       if (b && !b.contain(new kakao.maps.LatLng(p.la, p.lo))) return false;
       return true;
     });
     const vmHit = p => (toks.length && toks.some(t => (p.v1 + ' ' + p.v2).toLowerCase().indexOf(t) >= 0) ? 1 : 0);
-    const prefSort = (a, b2) => (S.role === 'owner' ? PREF_ORDER[a.pf] - PREF_ORDER[b2.pf] : isVer(b2) - isVer(a)) || ((b2.r || 0) - (a.r || 0)) || ((b2.ra || 0) - (a.ra || 0));
+    const prefSort = (a, b2) => (S.role === 'owner' ? PREF_ORDER[a.pf] - PREF_ORDER[b2.pf] : isVer(b2) - isVer(a)) || ((b2.rn || 0) - (a.rn || 0));
     const sorts = {
       dist: (a, b2) => (a._d || 0) - (b2._d || 0),
-      mine: (a, b2) => ((b2.r || 0) - (a.r || 0)) || prefSort(a, b2),
-      friends: (a, b2) => ((b2.ra || 0) - (a.ra || 0)) || ((b2.rn || 0) - (a.rn || 0)),
       recent: (a, b2) => String(b2.dt).localeCompare(String(a.dt)),
       auto: (a, b2) => (vmHit(b2) - vmHit(a)) || (org ? (a._d - b2._d) : prefSort(a, b2))
     };
@@ -433,7 +484,8 @@
 
   function renderMarkers() {
     clusterer.clear();
-    clusterer.addMarkers(S.filtered.map(markerFor));
+    clusterer.addMarkers(S.filtered.map(markerFor), true);   // 다 넣은 뒤 한 번만 그림
+    if (clusterer.redraw) clusterer.redraw();
   }
 
   function fitFiltered() {
@@ -576,9 +628,9 @@
 
   // ---------- 목록 ----------
   function prefBadge(p) {
-    if (S.role !== 'owner') return p.ver ? '<span class="badge b-g">✔ 검증</span>' : '';
-    const pr = PREF[p.pf] || PREF['저장만'];
-    return `<span class="badge ${pr.cls}">${esc(p.pf)}</span>` + (p.pub ? '<span class="badge b-pub">공개</span>' : '') + (p.ok === '검색안됨' ? '<span class="badge b-w">폐업?</span>' : '');
+    if (S.role !== 'owner') return (p.ver ? '<span class="badge b-g">✔ 검증</span>' : p.fr ? '<span class="badge b-j">친구 추천</span>' : '<span class="badge b-o">찜한 곳</span>') + (p.cl ? '<span class="badge b-w">폐업?</span>' : '');
+    const pr = PREF[p.pf] || PREF['찜한 곳'];
+    return `<span class="badge ${pr.cls}">${esc(p.pf)}</span>` + (p.pub ? '<span class="badge b-pub">공개</span>' : '') + (p.ok === '검색안됨' ? '<span class="badge b-w">폐업?</span>' : p.ok === '폐업' ? '<span class="badge">폐업</span>' : '');
   }
 
   function renderList() {
@@ -586,8 +638,7 @@
     const items = S.filtered.slice(0, S.shown).map((p, i) => {
       const vm = [p.v1, p.v2].filter(Boolean).join(' · ');
       const extra = [];
-      if (S.role === 'owner' && p.r) extra.push('내 ★' + p.r);
-      if (p.ra) extra.push(`지인 ★${p.ra} (${p.rn})`);
+      if (p.rn) extra.push('💬' + p.rn);   // 지인 한줄평 수
       if (p._d != null && origin()) extra.push(fmtDist(p._d));
       const note = S.role === 'owner' ? (p.memo || p.pc) : p.pc;
       return `<li data-i="${i}"><div class="nm"><span class="dot" style="background:${colorOf(p)}"></span>${esc(p.n)}${prefBadge(p)}</div>
@@ -611,20 +662,20 @@
   }
 
   // 티맵 길안내: 출발지는 티맵이 현재 위치로 자동 설정. 안드로이드는 goal* 형식(시험 확인: 갤럭시 S25·티맵 11.8.4), 아이폰은 rGo* 형식
-  const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   function tmapUrl(p) { const n = encodeURIComponent(p.n);
     return IS_IOS ? `tmap://route?rGoName=${n}&rGoX=${p.lo}&rGoY=${p.la}` : `tmap://route?goalname=${n}&goalx=${p.lo}&goaly=${p.la}`; }
-  function kakaoUrl(p) { return p.k ? `https://place.map.kakao.com/${encodeURIComponent(p.k)}` : `https://map.kakao.com/link/search/${encodeURIComponent(p.n)}`; }
+  function kakaoUrl(p) { return p.k && !isSus(p) && p.ok !== '폐업' ? `https://place.map.kakao.com/${encodeURIComponent(p.k)}` : `https://map.kakao.com/link/search/${encodeURIComponent(p.n)}`; }
 
   function openPlace(p) {
     if (!p) return;
     const vm = [p.v1, p.v2].filter(Boolean).join(' · ');
-    let html = `<div class="sh-name">${esc(p.n)}</div>
+    let html = `<div class="sh-name">${esc(p.n)}</div>${closureBox(p)}
+      ${S.role === 'owner' ? `<div class="fld" style="margin-top:10px"><label>상태 (누르면 바로 저장)</label>${prefSeg('qPf', p.pf)}</div>` : ''}
       <div class="sub" style="margin-top:6px">${prefBadge(p)}</div>
       <div class="sub">${esc(p.c)}${p.m ? ' · ' + esc(p.m) : ''}${p.t ? ' · #' + esc(p.t.split(', ').join(' #')) : ''}</div>
       ${vm ? `<div class="vm" style="font-size:16px">✔ 검증 메뉴: ${esc(vm)}</div>` : ''}
-      <div class="sub">${S.role === 'owner' && p.r ? '내 평점 ★' + p.r + ' · ' : ''}${p.ra ? `지인 평균 ★${p.ra} (${p.rn}명)` : '지인 평가 없음'}${p._d != null && origin() ? ' · ' + fmtDist(p._d) : ''}</div>
-      ${p.pc ? `<div class="note">💬 ${esc(p.pc)}</div>` : ''}
+      ${p._d != null && origin() ? `<div class="sub">${fmtDist(p._d)}</div>` : ''}
+      ${p.pc ? `<div class="note">💬 ${S.role === 'owner' ? '내 한줄평' : '추천인 한줄평'}: ${esc(p.pc)}</div>` : ''}
       ${S.role === 'owner' && p.memo ? `<div class="note">📝 ${esc(p.memo)}</div>` : ''}
       <div class="sub">${esc(p.a)}</div>
       <div class="acts">
@@ -632,30 +683,51 @@
         <a class="btn" href="${kakaoUrl(p)}" target="_blank" rel="noopener">ℹ️ 카카오맵 상세</a>
         <button class="btn" id="copyAddr">📋 주소 복사</button>
       </div>`;
-    html += S.role === 'owner' ? ownerEditForm(p) : friendRateForm(p);
-    html += `<div class="sec"><h4>지인 평가</h4><div id="rvList" class="sub">불러오는 중…</div></div>`;
+    html += S.role === 'owner' ? ownerEditForm(p) : friendNoteForm(p);
+    html += `<div class="sec"><h4>지인 한줄평</h4><div id="rvList" class="sub">불러오는 중…</div></div>`;
     openSheet(html);
     $('copyAddr').onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(p.a) : Promise.reject()).then(() => toast('주소를 복사했습니다'), () => toast(p.a, 4000)); };
     $('goTmap').addEventListener('click', () => { setTimeout(() => { if (!document.hidden) toast('티맵이 열리지 않으면 앱 설치 여부를 확인하세요', 3500); }, 1800); });
     if (map && S.view === 'map') map.panTo(new kakao.maps.LatLng(p.la, p.lo));
-    if (S.role === 'owner') bindOwnerEdit(p); else bindFriendRate(p);
+    if (S.role === 'owner') { bindOwnerEdit(p); bindClosure(p); } else bindFriendNote(p);
     api('detail', { id: p.id }).then(r => {
       const el = $('rvList'); if (!el) return;
-      el.innerHTML = r.ratings.length ? r.ratings.map(x => `<div class="rv"><b>${esc(x.who)}</b> ★${x.s}${x.mn ? ' · 추천: ' + esc(x.mn) : ''} <span class="sub">${esc(x.dt)}</span>${x.cm ? `<div>${esc(x.cm)}</div>` : ''}</div>`).join('') : '아직 지인 평가가 없습니다.';
-    }).catch(() => { const el = $('rvList'); if (el) el.textContent = '평가를 불러오지 못했습니다.'; });
+      el.innerHTML = r.notes.length ? r.notes.map(x => `<div class="rv"><b>${esc(x.who)}</b> <span class="sub">${esc(x.dt)}</span><div>${esc(x.cm)}</div></div>`).join('') : '아직 지인 한줄평이 없습니다.';
+    }).catch(() => { const el = $('rvList'); if (el) el.textContent = '한줄평을 불러오지 못했습니다.'; });
   }
 
-  function starPicker(id, val) {
-    return `<div class="stars" id="${id}">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-s="${n}" class="${n <= val ? 'on' : ''}">★</button>`).join('')}</div>`;
+  // 폐업 의심·폐업 안내 (정보창 맨 위)
+  function closureBox(p) {
+    if (S.role !== 'owner') return p.cl ? '<div class="warn">⚠ <b>폐업 의심</b> — 최근 카카오맵에서 검색되지 않습니다. 방문 전 영업 여부를 확인하세요.</div>' : '';
+    if (p.ok === '검색안됨') return `<div class="warn">⚠ <b>폐업 의심</b> — 카카오맵에서 ${p.ms > 1 ? p.ms + '회 연속 ' : ''}검색되지 않았습니다${p.ck ? ' (' + esc(p.ck) + ' 점검)' : ''}. 상호 변경·이전일 수도 있습니다.
+      <div class="two" style="margin-top:8px"><button class="btn small" data-ok="수동확인">영업 중 맞음</button><button class="btn small" data-ok="폐업">폐업 처리</button></div></div>`;
+    if (p.ok === '폐업') return `<div class="warn gray">폐업 처리한 식당입니다. 친구 화면과 기본 지도에서는 보이지 않습니다.
+      <button class="btn small" data-ok="OK" style="width:100%;margin-top:8px">되살리기</button></div>`;
+    return '';
   }
-  function bindStars(id, cb) {
-    const el = $(id); let val = el.querySelectorAll('.on').length;
-    el.onclick = e => {
-      const b = e.target.closest('[data-s]'); if (!b) return;
-      const n = +b.dataset.s; val = (val === n) ? 0 : n;
-      el.querySelectorAll('[data-s]').forEach(x => x.classList.toggle('on', +x.dataset.s <= val));
-      cb(val);
-    };
+  function bindClosure(p) {
+    document.querySelectorAll('#sheetBody [data-ok]').forEach(b => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const r = await api('update', { id: p.id, fields: { ok: b.dataset.ok } });
+          replacePlace(p, r.place);
+          toast({ 수동확인: '영업 중으로 표시했습니다 (자동 점검에서 제외)', 폐업: '폐업 처리했습니다', OK: '되살렸습니다' }[b.dataset.ok]);
+          closeSheet(); applyFilters();
+        } catch (e) { toast(e.message, 3500); b.disabled = false; }
+      };
+    });
+  }
+  // 서버에서 받은 수정본으로 교체
+  function replacePlace(p, np) {
+    indexPlace(np);
+    const idx = S.places.indexOf(p);
+    if (p._mk) { clusterer.removeMarker(p._mk); p._mk = null; }
+    if (idx >= 0) S.places[idx] = np;
+    S.byId[np.id] = np;
+    [np.v1, np.v2].forEach(m => { if (m && S.menus.indexOf(m) < 0) S.menus.push(m); });
+    saveCache();
+    return np;
   }
 
   // 선호도 선택 버튼 (수정·추가 화면 공통)
@@ -673,8 +745,6 @@
   const menuDatalist = () => `<datalist id="menuList">${S.menus.slice(0, 800).map(m => `<option value="${esc(m)}">`).join('')}</datalist>`;
   function ownerEditForm(p) {
     return `<div class="sec"><h4>내 기록</h4>
-      <div class="fld"><label>선호도</label>${prefSeg('edPf', p.pf)}</div>
-      <div class="fld"><label>내 평점 (같은 별을 다시 누르면 지움)</label>${starPicker('edR', p.r || 0)}</div>
       <div class="two">
         <div class="fld"><label>검증 메뉴 1</label><input type="text" id="edV1" list="menuList" value="${esc(p.v1)}" placeholder="예: 평양냉면"></div>
         <div class="fld"><label>검증 메뉴 2</label><input type="text" id="edV2" list="menuList" value="${esc(p.v2)}" placeholder="예: 수육"></div>
@@ -684,7 +754,7 @@
         <label class="toggle"><input type="checkbox" id="edV" ${p.v ? 'checked' : ''}> 방문함</label>
         <label class="toggle"><input type="checkbox" id="edPub" ${p.pub ? 'checked' : ''}> 친구에게 공개</label>
       </div>
-      <div class="fld"><label>공개 한줄평 (친구에게 보임)</label><input type="text" id="edPc" value="${esc(p.pc)}" maxlength="100"></div>
+      <div class="fld"><label>내 한줄평 · 방문 인상 (친구에게 보임)</label><input type="text" id="edPc" value="${esc(p.pc)}" maxlength="100"></div>
       <div class="fld"><label>개인 메모 (본인만)</label><textarea id="edMemo" maxlength="200">${esc(p.memo)}</textarea></div>
       <div class="fld"><label>대분류 ${p.kc ? '(카카오: ' + esc(p.kc) + ')' : ''}</label>
         <select id="edC">${S.categories.map(c => `<option${c === p.c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
@@ -693,48 +763,47 @@
   }
 
   function bindOwnerEdit(p) {
-    const st = { pf: p.pf, r: p.r || '' };
-    bindPrefSeg('edPf', v => { st.pf = v; if (v === '검증완료') $('edV').checked = true; });
-    bindStars('edR', v => { st.r = v || ''; });
+    let cur = p;   // 상태를 바로 바꾸면 새 데이터로 교체되므로 현재 것을 따로 기억
+    // 상태: 누르는 즉시 저장 (검증완료로 바꾸면 '방문함'도 함께 체크)
+    bindPrefSeg('qPf', async v => {
+      if (v === cur.pf) return;
+      const fields = { pf: v }; if (v === '검증완료') { fields.v = true; $('edV').checked = true; }
+      try {
+        const r = await api('update', { id: cur.id, fields });
+        cur = replacePlace(cur, r.place);
+        toast(`'${v}'(으)로 바꿨습니다`); applyFilters();
+      } catch (e) { toast(e.message, 3500); }
+    });
     const v1el = $('edV1'), v2el = $('edV2');
-    const onMenu = () => { if ((v1el.value.trim() || v2el.value.trim()) && (st.pf === '저장만' || st.pf === '우선방문')) $('edPf').querySelector('[data-pf="검증완료"]').click(); };
-    v1el.onchange = onMenu; v2el.onchange = onMenu;
     $('edSave').onclick = async () => {
-      const fields = { pf: st.pf, r: st.r, v1: v1el.value.trim(), v2: v2el.value.trim(), v: $('edV').checked, pub: $('edPub').checked,
+      // 검증 메뉴를 넣으면 서버가 자동으로 검증완료로 바꿈
+      const fields = { v1: v1el.value.trim(), v2: v2el.value.trim(), v: $('edV').checked, pub: $('edPub').checked,
         pc: $('edPc').value.trim(), memo: $('edMemo').value.trim() };
-      if ($('edC').value !== p.c) fields.c = $('edC').value;
+      if ($('edC').value !== cur.c) fields.c = $('edC').value;
       $('edSave').disabled = true; $('edSave').textContent = '저장 중…';
       try {
-        const r = await api('update', { id: p.id, fields });
-        const np = r.place;
-        indexPlace(np);
-        const idx = S.places.indexOf(p);
-        if (p._mk) { clusterer.removeMarker(p._mk); p._mk = null; }
-        if (idx >= 0) S.places[idx] = np;
-        S.byId[np.id] = np;
-        [np.v1, np.v2].forEach(m => { if (m && S.menus.indexOf(m) < 0) S.menus.push(m); });
-        saveCache();
+        const r = await api('update', { id: cur.id, fields });
+        replacePlace(cur, r.place);
         toast('저장했습니다'); closeSheet(); applyFilters();
       } catch (e) { toast(e.message, 3500); $('edSave').disabled = false; $('edSave').textContent = '저장'; }
     };
   }
 
-  function friendRateForm(p) {
-    return `<div class="sec"><h4>내 평가 남기기</h4>
-      ${starPicker('frS', p.my || 0)}
-      <div class="fld"><label>추천 메뉴 (선택)</label><input type="text" id="frM" maxlength="30" placeholder="예: 물냉면"></div>
-      <div class="fld"><label>한줄평 (선택)</label><input type="text" id="frC" maxlength="100"></div>
-      <button class="btn primary" id="frSave" style="width:100%">${p.my ? '평가 수정' : '평가 등록'}</button></div>`;
+  function friendNoteForm(p) {
+    return `<div class="sec"><h4>${p.my ? '내 한줄평 고치기' : '한줄평 남기기'}</h4>
+      <div class="fld"><input type="text" id="frC" maxlength="100" value="${esc(p.my || '')}" placeholder="추천 이유를 한 줄로 (예: 육수가 깔끔해요)" style="width:100%"></div>
+      <div class="sub" style="margin:-2px 0 8px">다른 친구에게는 이름 없이 '지인'으로 보입니다.${p.my ? ' 내용을 지우고 저장하면 삭제됩니다.' : ''}</div>
+      <button class="btn primary" id="frSave" style="width:100%">저장</button></div>`;
   }
-  function bindFriendRate(p) {
-    let s = p.my || 0;
-    bindStars('frS', v => { s = v; });
+  function bindFriendNote(p) {
     $('frSave').onclick = async () => {
-      if (!s) return toast('별점을 선택해 주세요');
+      const cm = $('frC').value.trim();
+      if (!cm && !p.my) return toast('한줄평을 입력해 주세요');
       $('frSave').disabled = true;
       try {
-        const r = await api('rate', { id: p.id, score: s, comment: $('frC').value.trim(), menu: $('frM').value.trim() });
-        Object.assign(p, r); saveCache(); toast('평가를 등록했습니다'); openPlace(p); renderList();
+        const r = await api('note', { id: p.id, comment: cm });
+        p.rn = r.rn; if (r.my) p.my = r.my; else delete p.my;
+        saveCache(); toast(cm ? '한줄평을 저장했습니다' : '한줄평을 삭제했습니다'); openPlace(p); renderList();
       } catch (e) { toast(e.message, 3500); $('frSave').disabled = false; }
     };
   }
@@ -835,30 +904,27 @@
   function pickDoc(d) {
     const owner = S.role === 'owner';
     openSheet(`<div class="sh-name">${esc(d.name)}</div><div class="sub">${esc(d.cat)}</div><div class="sub">${esc(d.addr)}</div>
-      ${owner ? `<div class="fld"><label>선호도</label>${prefSeg('npPf', '저장만')}</div>
+      ${owner ? `<div class="fld"><label>선호도</label>${prefSeg('npPf', '찜한 곳')}</div>
         <div class="two"><div class="fld"><label>검증 메뉴 1</label><input type="text" id="npV1" list="menuList"></div>
         <div class="fld"><label>검증 메뉴 2</label><input type="text" id="npV2" list="menuList"></div></div>
         ${menuDatalist()}
         <div class="fld"><label>메모</label><textarea id="npMemo" maxlength="200"></textarea></div>
         <label class="toggle"><input type="checkbox" id="npPub"> 친구에게 공개</label>`
-      : `<div class="fld"><label>추천 점수</label>${starPicker('sgS', 0)}</div>
-        <div class="fld"><label>추천 이유·메뉴</label><textarea id="sgR" maxlength="200" placeholder="예: 들기름막국수가 일품"></textarea></div>`}
+      : `<div class="fld"><label>추천 이유 (한줄평으로 함께 등록됩니다)</label><textarea id="sgR" maxlength="100" placeholder="예: 들기름막국수가 일품"></textarea></div>`}
       <button class="btn primary" id="npSave" style="width:100%;margin-top:10px">${owner ? '추가' : '건의 보내기'}</button>`);
-    let pf = '저장만', s = 0;
-    if (owner) {
-      bindPrefSeg('npPf', v => { pf = v; });
-    } else bindStars('sgS', v => { s = v; });
+    let pf = '찜한 곳';
+    if (owner) bindPrefSeg('npPf', v => { pf = v; });
     $('npSave').onclick = async () => {
       $('npSave').disabled = true;
       try {
         if (owner) {
           const v1 = $('npV1').value.trim(), v2 = $('npV2').value.trim();
-          if ((v1 || v2) && (pf === '저장만' || pf === '우선방문')) pf = '검증완료';
+          if ((v1 || v2) && (pf === '찜한 곳' || pf === '우선방문')) pf = '검증완료';
           const r = await api('addPlace', { doc: d, extra: { pf, v1, v2, memo: $('npMemo').value.trim(), pub: $('npPub').checked } });
           if (r.dup) { toast('이미 등록된 식당입니다'); return openPlace(S.byId[r.id]); }
           addLocal(r.place); closeAdd(); toast('추가했습니다'); openPlace(S.byId[r.place.id]);
         } else {
-          const r = await api('suggest', { doc: d, score: s, reason: $('sgR').value.trim() });
+          const r = await api('suggest', { doc: d, reason: $('sgR').value.trim() });
           toast(r.msg, 3000); closeAdd(); closeSheet();
         }
       } catch (e) { toast(e.message, 3500); $('npSave').disabled = false; }
@@ -879,7 +945,7 @@
       setInbox(r.list.length);
       $('ibList').innerHTML = r.list.length ? r.list.map(x => `<div class="res">
         <div class="nm">${esc(x.name)}${x.dup ? '<span class="badge b-g">이미 등록됨</span>' : ''}</div>
-        <div class="sub">${esc(x.who)} · ${esc(x.dt)}${x.s ? ' · ★' + x.s : ''}</div>
+        <div class="sub">${esc(x.who)} · ${esc(x.dt)}</div>
         <div class="sub">${esc(x.cat)}</div><div class="sub">${esc(x.addr)}</div>
         ${x.reason ? `<div class="note">💬 ${esc(x.reason)}</div>` : ''}
         <div class="two"><button class="btn small primary" data-ok="${x.row}">승인</button><button class="btn small" data-no="${x.row}">반려</button></div></div>`).join('')
@@ -898,10 +964,6 @@
 
   // ---------- 앱 설치 안내 버튼 ----------
   // 카톡 등 앱 안의 브라우저 → [크롬으로 열기] / 크롬(미설치) → [앱 설치] / 아이폰 사파리 → [홈 화면에 추가 방법] / 설치된 앱 → 표시 안 함
-  const UA = navigator.userAgent;
-  const IS_ANDROID = /Android/i.test(UA);
-  const IN_APP = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp/i.test(UA) || (IS_ANDROID && /; wv\)/.test(UA));
-  const IS_STANDALONE = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   let installEvt = null;
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; showInstallBar(); });
   window.addEventListener('appinstalled', () => { installEvt = null; hideInstallBar(); toast('호야맛집 앱을 설치했습니다. 홈 화면의 아이콘으로 열어 주세요', 4000); });
@@ -927,10 +989,11 @@
     b.querySelector('.ib-x').onclick = () => { store.set('mz_install_hide', Date.now()); hideInstallBar(); };
     b.hidden = false; document.body.classList.add('has-ib');   // 알림 문구가 버튼에 가리지 않게 위로
   }
-  function openInChrome() {
-    const url = location.href;
+  function openInChrome(url) {
+    url = url || `${location.origin}${location.pathname}?k=${encodeURIComponent(S.key)}`;
+    const u = new URL(url);
     if (IS_IOS) { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(url); return; }
-    location.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
+    location.href = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.android.chrome;end`;
     // 크롬으로 넘어가지 않으면 (카톡 버전에 따라 막힐 수 있음) 주소를 복사하고 안내
     setTimeout(() => {
       if (document.hidden) return;

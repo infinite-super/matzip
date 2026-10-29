@@ -10,11 +10,13 @@
 <!-- 휴대폰 상·하단 막대: 앱 바탕색과 같게 (밝은 모드 흰색, 어두운 모드 짙은 회색) -->
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1b1e">
+<!-- 다른 사이트로 이동할 때 주소 전체(키 포함)를 넘기지 않음 -->
+<meta name="referrer" content="strict-origin">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>호야맛집</title>
-<link rel="stylesheet" href="style.css?v=1029a">
-<script src="config.js?v=1029a"></script>
+<link rel="stylesheet" href="style.css?v=1029h">
+<script src="config.js?v=1029h"></script>
 </head>
 <body>
 <div id="app">
@@ -39,13 +41,21 @@
           <select id="sgg"><option value="">전체 시군구</option></select>
         </div>
       </div>
+      <div class="owner-only">
+        <div class="fp-title">영업 상태</div>
+        <div class="row">
+          <select id="stSel">
+            <option value="">폐업 처리한 곳 제외 (기본)</option>
+            <option value="sus">폐업 의심만 보기 (점검용)</option>
+            <option value="all">폐업 처리한 곳도 보기</option>
+          </select>
+        </div>
+      </div>
       <div class="fp-title">정렬</div>
       <div class="row">
         <select id="sort">
           <option value="auto">자동 (검색어·위치·선호도 순)</option>
           <option value="dist">가까운 순</option>
-          <option value="mine" class="owner-only">내 평점 순</option>
-          <option value="friends">지인 평가 순</option>
           <option value="recent" class="owner-only">최근 등록 순</option>
         </select>
         <button id="btnReset">초기화</button>
@@ -58,6 +68,7 @@
   <main>
     <div id="map"></div>
     <div id="mapCount"></div>
+    <div id="legend"></div>
     <section id="addPanel" hidden></section>
     <div id="installBar" hidden></div>
     <section id="listView" hidden>
@@ -81,6 +92,6 @@
   <div id="toast" hidden></div>
   <div id="gate" hidden></div>
 </div>
-<script src="app.js?v=1029a"></script>
+<script src="app.js?v=1029h"></script>
 </body>
 </html>
